@@ -1,0 +1,23 @@
+name: 问题反馈
+description: 反馈栖格 Beta 的故障或异常
+title: "[Bug] "
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 系统与显示器
+      description: Windows 版本、屏幕数量、分辨率、缩放比例，是否使用其他桌面整理或壁纸工具。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 描述触发问题的操作，以及期望和实际结果。
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 补充信息
+      description: 可补充截图或脱敏诊断。不要上传个人快捷方式、完整 Data 或 Storage。

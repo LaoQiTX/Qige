@@ -1,0 +1,16 @@
+{
+  "name": "栖格",
+  "latinName": "Qige",
+  "pronunciation": "qī gé",
+  "tagline": "给桌面留点空。",
+  "colors": {
+    "ink": "#1D2D26",
+    "sage": "#B2D1BC",
+    "mist": "#E4EFE5",
+    "leaf": "#284C3C"
+  },
+  "applicationIcon": "qige.ico",
+  "trayIconOnDark": "qige-tray-light.ico",
+  "trayIconOnLight": "qige-tray-dark.ico",
+  "preview": "qige-brand-preview.png"
+}
