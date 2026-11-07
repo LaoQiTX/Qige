@@ -17,23 +17,11 @@ internal static class ShortcutIcon
         {
             if (Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
             {
-                object? shell = null, shortcut = null;
-                try
-                {
-                    shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!)!;
-                    shortcut = ((dynamic)shell).CreateShortcut(path);
-                    target = (string)((dynamic)shortcut).TargetPath;
-                    working = (string)((dynamic)shortcut).WorkingDirectory;
-                    var location = (string)((dynamic)shortcut).IconLocation;
-                    var comma = location.LastIndexOf(',');
-                    iconPath = comma >= 0 ? location[..comma] : location;
-                    if (comma >= 0) int.TryParse(location[(comma + 1)..].Trim(), out iconIndex);
-                }
-                finally
-                {
-                    if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.ReleaseComObject(shortcut);
-                    if (shell != null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
-                }
+                var shortcut = NativeShortcut.Read(path);
+                target = shortcut.Target;
+                working = shortcut.WorkingDirectory;
+                iconPath = shortcut.IconPath;
+                iconIndex = shortcut.IconIndex;
             }
             else if (Path.GetExtension(path).Equals(".url", StringComparison.OrdinalIgnoreCase))
             {

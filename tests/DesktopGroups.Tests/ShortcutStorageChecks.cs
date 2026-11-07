@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 
 namespace DesktopGroups;
 
@@ -107,20 +106,5 @@ internal static class ShortcutStorageChecks
     }
 
     private static void CreateLink(string path, string target, string arguments = "")
-    {
-        object? shell = null, link = null;
-        try
-        {
-            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!)!;
-            link = ((dynamic)shell).CreateShortcut(path);
-            ((dynamic)link).TargetPath = target;
-            ((dynamic)link).Arguments = arguments;
-            ((dynamic)link).Save();
-        }
-        finally
-        {
-            if (link != null && Marshal.IsComObject(link)) Marshal.ReleaseComObject(link);
-            if (shell != null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
-        }
-    }
+        => NativeShortcut.Write(path, target, arguments);
 }

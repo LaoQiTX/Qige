@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Media.Imaging;
@@ -31,23 +30,13 @@ internal sealed record ShortcutInfo(string Key, string Target, string Arguments,
         }
         else if (Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
         {
-            object? shell = null, shortcut = null;
-            try
-            {
-                shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!)!;
-                shortcut = ((dynamic)shell).CreateShortcut(path);
-                target = (string)((dynamic)shortcut).TargetPath;
-                arguments = (string)((dynamic)shortcut).Arguments;
-                working = (string)((dynamic)shortcut).WorkingDirectory;
-                if (string.IsNullOrWhiteSpace(target)) throw new IOException("此快捷方式的目标无法可靠识别，暂不收纳。");
-                target = Environment.ExpandEnvironmentVariables(target).ToUpperInvariant();
-                working = Environment.ExpandEnvironmentVariables(working).ToUpperInvariant();
-            }
-            finally
-            {
-                if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.ReleaseComObject(shortcut);
-                if (shell != null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
-            }
+            var shortcut = NativeShortcut.Read(path);
+            target = shortcut.Target;
+            arguments = shortcut.Arguments;
+            working = shortcut.WorkingDirectory;
+            if (string.IsNullOrWhiteSpace(target)) throw new IOException("此快捷方式的目标无法可靠识别，暂不收纳。");
+            target = Environment.ExpandEnvironmentVariables(target).ToUpperInvariant();
+            working = Environment.ExpandEnvironmentVariables(working).ToUpperInvariant();
         }
         else throw new IOException("这个原型先支持 .lnk 和 .url 快捷方式。");
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new[] { target, arguments, working }))));

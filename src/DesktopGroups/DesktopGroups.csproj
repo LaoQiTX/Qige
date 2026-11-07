@@ -13,6 +13,7 @@
     <ApplicationIcon>..\..\assets\brand\qige.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../../docs/user-guide.md" Link="使用说明.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
     <InternalsVisibleTo Include="DesktopGroups.Tests" />
     <InternalsVisibleTo Include="DesktopGroups.Diagnostics" />
     <Resource Include="..\..\assets\brand\qige.ico" Link="Assets\qige.ico" />

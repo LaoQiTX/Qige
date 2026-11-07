@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 
 namespace DesktopGroups;
@@ -80,19 +79,9 @@ internal static class ShortcutIconCheck
 
     private static void CreateLink(string path, string target, string? icon)
     {
-        object? shell = null, shortcut = null;
-        try
-        {
-            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!)!;
-            shortcut = ((dynamic)shell).CreateShortcut(path);
-            ((dynamic)shortcut).TargetPath = target;
-            if (icon != null) ((dynamic)shortcut).IconLocation = icon;
-            ((dynamic)shortcut).Save();
-        }
-        finally
-        {
-            if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.ReleaseComObject(shortcut);
-            if (shell != null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
-        }
+        var comma = icon?.LastIndexOf(',') ?? -1;
+        var iconPath = comma >= 0 ? icon![..comma] : icon;
+        var iconIndex = comma >= 0 ? int.Parse(icon![(comma + 1)..]) : 0;
+        NativeShortcut.Write(path, target, iconPath: iconPath, iconIndex: iconIndex);
     }
 }
