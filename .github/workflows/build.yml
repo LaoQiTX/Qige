@@ -1,0 +1,19 @@
+name: Windows build and storage checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build and run isolated filesystem checks
+        shell: pwsh
+        run: ./build.ps1 -Task Test -Configuration Release

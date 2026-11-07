@@ -1,29 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <!-- Explicit default platform metadata avoids MSBuild probing/creating the
-         per-user Microsoft SDKs directory just to obtain a display name. -->
-    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
-    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
-    <SDKReferenceDirectoryRoot>$(MSBuildProjectDirectory)\..\..\.build\windows-sdk-cache</SDKReferenceDirectoryRoot>
     <UseWPF>true</UseWPF>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>DesktopGroups</AssemblyName>
     <Product>栖格 Qige</Product>
     <Title>栖格 Qige</Title>
     <Description>轻量的 Windows 桌面分区整理工具</Description>
-    <Version>0.1.0-beta.1</Version>
+    <Version>0.1.0-beta.2</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
-    <ApplicationIcon>..\..\Brand\qige.ico</ApplicationIcon>
-    <DebugType>embedded</DebugType>
+    <ApplicationIcon>..\..\assets\brand\qige.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Resource Include="..\..\Brand\qige.ico" Link="Assets\qige.ico" />
-    <Resource Include="..\..\Brand\qige-tray-light.ico" Link="Assets\qige-tray-light.ico" />
-    <Resource Include="..\..\Brand\qige-tray-dark.ico" Link="Assets\qige-tray-dark.ico" />
+    <InternalsVisibleTo Include="DesktopGroups.Tests" />
+    <InternalsVisibleTo Include="DesktopGroups.Diagnostics" />
+    <Resource Include="..\..\assets\brand\qige.ico" Link="Assets\qige.ico" />
+    <Resource Include="..\..\assets\brand\qige-tray-light.ico" Link="Assets\qige-tray-light.ico" />
+    <Resource Include="..\..\assets\brand\qige-tray-dark.ico" Link="Assets\qige-tray-dark.ico" />
   </ItemGroup>
 </Project>

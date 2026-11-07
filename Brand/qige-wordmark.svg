@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 240" fill="none">
-  <title>栖格 Qige 组合标志</title>
-  <g transform="translate(-60 -50) scale(0.703125)">
-    <path d="M 360 230 L 360 176 C 360 153.9086 342.0914 136 320 136 L 176 136 C 153.9086 136 136 153.9086 136 176 L 136 320 C 136 342.0914 153.9086 360 176 360 L 230 360" stroke="#284C3C" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="282" y="282" width="96" height="96" rx="21" fill="#284C3C"/>
-  </g>
-  <text x="240" y="158" fill="#284C3C" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="102" font-weight="600">栖格</text>
-  <text x="512" y="159" fill="#607C68" font-family="Segoe UI,sans-serif" font-size="62" font-weight="600">Qige</text>
-</svg>

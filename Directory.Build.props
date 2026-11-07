@@ -1,0 +1,14 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Avoid per-user Windows SDK discovery/cache creation. -->
+    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
+    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
+    <SDKReferenceDirectoryRoot>$(MSBuildThisFileDirectory).build\windows-sdk-cache</SDKReferenceDirectoryRoot>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DebugType>embedded</DebugType>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
+  </PropertyGroup>
+</Project>

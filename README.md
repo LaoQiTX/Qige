@@ -1,73 +1,75 @@
 # 栖格 Qige
 
-**给桌面留点空。** 一个面向 Windows 11 的轻量桌面分区整理工具。
+**给桌面留点空。** 面向 Windows 11 的轻量桌面分区整理工具。
 
-![栖格品牌设计](Brand/qige-brand-preview.png)
+![栖格品牌设计](assets/brand/qige-brand-preview.png)
 
-当前版本 **v0.1.0-beta.1**，处于私有、小范围测试阶段。
+当前源码为 **0.1.0-beta.2**，小范围测试阶段。已发布的首个测试包为 [v0.1.0-beta.1](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.1)，它仍采用旧数据目录；beta.2 的目录调整见[更新记录](CHANGELOG.md)。
 
-## 下载与运行
+## 使用
 
-在仓库的 **Releases** 下载 `Qige-0.1.0-beta.1-win-x64.zip`，完整解压到固定、可写的目录，双击 `DesktopGroups.exe`。标准包自带 .NET 运行时，无需安装额外环境；不要在压缩包内直接运行。
+将发布 ZIP 完整解压到固定、可写目录，双击 `DesktopGroups.exe`。标准包自带 .NET 运行时。首次可用“打开样例.cmd”体验，随后少量收纳真实桌面快捷方式。详见[使用说明](docs/user-guide.md)。
 
-首次建议用包内的“打开样例.cmd”体验，再少量收纳真实桌面快捷方式。完整说明见 [Beta 使用说明](BETA使用说明.md)。
+目前支持单分区、最多 12 个个人桌面 `.lnk` / `.url`：整组移动、悬停折叠动画、图标高亮、拖回桌面解除分组、同目标快捷方式重建同步、托盘常驻和可选开机启动。关闭控制窗口收起到托盘；“退出并归还”真正退出，并归还桌面内容。
 
-## 已有功能
+尚无多分区、调整大小、滚动、普通文件／文件夹、公共桌面入口、原生右键菜单或全桌面双击隐藏。真实 Explorer 重启、休眠、双屏插拔、混合 DPI 和长期共存仍需进一步验收。
 
-- 单个桌面分区，最多 12 个个人桌面的 `.lnk` / `.url` 快捷方式。
-- 实际收纳、整组移动；拖回桌面解除分组，下次启动不再收纳该项。
-- 折叠为标题条，悬停即时触发约 150 毫秒展开／收起动画。
-- 图标悬停高亮、单击选中、双击打开。
-- 同路径、同目标、同参数、同工作目录的快捷方式重建后自动同步，保留旧版。
-- 托盘常驻、可选开机启动、重复启动唤回窗口。
-- 桌面窗口恢复机制、显示工作区定位与折叠状态记忆。
-- 文件搬移校验、下载来源数据流保留、冲突保护及恢复记录。
+## 数据存放
 
-关闭控制窗口会收起到托盘。请用 **“退出并归还”** 真正退出，内容会归还原桌面路径；“全部归还”保留分组记忆，暂停当前会话收纳。
+程序首次运行在 **exe 所在目录**创建唯一的数据目录 `QigeData`，与源码工作目录无关：
 
-## 测试范围
-
-当前是单分区 Beta，尚无多分区、调整大小、滚动、组内排序、普通文件／文件夹、公共桌面入口、原生右键菜单或全桌面双击隐藏。
-
-已在开发机确认拖放、图标、动画、托盘、Win+D 和单实例唤回。隔离检查覆盖 26 项收纳／冲突／中断恢复、24 项常驻行为、120 次面板移动及 OLE／动画回归。真实 Explorer 重启、休眠、多屏插拔、混合 DPI、登录启动与长期运行仍需进一步验证。详细记录见 [常驻与恢复验证](常驻与恢复验证.md)。
-
-## 数据与恢复
-
-快捷方式会**实际移入**软件目录下的 `Storage`；配置与恢复记录在 `Data`。不要在仍有收纳内容时删除或覆盖整个软件目录。异常退出后，从同一目录重新运行并按记录恢复，可使用“全部归还”。
-
-程序生成的配置、存储、缓存、临时文件及诊断均在软件／项目目录内。开机启动默认关闭，开启时只登记当前用户的系统启动入口。Windows 自身缓存和日志由系统管理。不需要管理员权限，无账号、云同步或自动更新。
-
-## 开发
-
-技术栈：C# / .NET 10、WPF 离屏绘制、Win32 分层桌面子窗口、Windows Shell。没有第三方 NuGet 业务依赖。
-
-使用现有 .NET 10 SDK；`global.json` 指定 SDK 版本。项目构建将缓存和临时文件指向 `.build`。
-
-```powershell
-.\build.ps1                         # 编译
-.\build.ps1 -Task Demo              # 项目内样例
-.\build.ps1 -Task Run               # 真实桌面模式
-.\build.ps1 -Task SelfTest          # 路径、存储与结构自检
-.\build.ps1 -Task StorageTest       # 文件收纳、同步、冲突和恢复
-.\build.ps1 -Task ResidentTest      # 常驻与模拟恢复
-.\build.ps1 -Task StorageRenderTest # 桌面面板、动画与 OLE
-.\build.ps1 -Task IconTest          # 快捷方式图标解析
-.\publish.ps1                      # Windows x64 自带运行时发布包
+```text
+安装目录/
+├── DesktopGroups.exe
+├── …运行时文件
+├── 使用说明.md
+└── QigeData/
+    ├── config/       分区、成员与布局设置
+    ├── storage/      已收纳快捷方式及历史版本
+    ├── recovery/     会话锁、迁移及旧布局恢复依据
+    ├── logs/         诊断记录
+    ├── cache/temp/   程序临时文件
+    └── samples/      样例数据
 ```
 
-涉及桌面接口的检查应在已登录的 Windows 桌面会话运行。`publish.ps1` 首次会从 NuGet 下载微软运行时到项目缓存，发布包在 `artifacts`，只复制干净构建输出和明确列出的文档。Git 忽略 `Data`、`Storage`、`TestData`、缓存与发布产物。
+目录按需生成。快捷方式会**实际移动**，正常退出归还；异常退出后请从同一目录重启恢复。更新时先退出并归还，只替换程序文件，保留 `QigeData`。不覆盖冲突文件，不自动清理历史版本。
 
-工程名与文件恢复身份仍保留 `DesktopGroups`；应用展示名为栖格 Qige。品牌素材在 [Brand](Brand/品牌设计说明.md)。
+beta.1 用户在原可写目录放入新版程序后，首次运行会迁移原 `Data` / `Storage`，保留原配置备份及迁移记录；请勿再同时启动旧版。数据目录不可写时显示错误，不改用 C 盘或 AppData。不建议安装到需要管理员权限才能写入的 Program Files。
 
-## 文档与反馈
+开发脚本使用项目内 `.local/QigeData`；测试、诊断分别使用 `.build` 下的隔离目录。程序可用绝对路径参数 `--data-dir` 指定开发数据位置。开机启动默认关闭，启用时登记当前用户启动项；Windows 自身的缓存和日志由系统管理。
 
-- [更新记录](CHANGELOG.md)
-- [Beta 使用说明](BETA使用说明.md)
-- [产品需求](产品需求文档.md)
-- [技术方案与历史验证](产品与技术方案.md)
-- [收纳原型详细说明](收纳原型使用说明.md)
-- [常驻与恢复验证](常驻与恢复验证.md)
+## 开发与项目结构
 
-请在 Issues 描述版本、Windows 环境、屏幕数量／缩放、复现步骤和期望结果。诊断可能含本机信息，分享前先脱敏；不要上传个人快捷方式或完整的 Data／Storage。
+C# / .NET 10、WPF 离屏绘制、Win32 分层桌面窗口、Windows Shell，无第三方 NuGet 业务依赖。在现有 PowerShell 7 中使用 .NET 10 SDK；构建脚本将可控缓存与临时文件定向到项目内。
 
-本项目参考桌面分区类工具的使用需求，自行实现；不包含 Fences 的代码或资源。
+```text
+src/DesktopGroups/           正式应用：App / Desktop / Panels / Shell / Storage
+tests/DesktopGroups.Tests/  隔离回归检查，不随正式程序发布
+tools/DesktopGroups.Diagnostics/  桌面诊断与历史原型，不随正式程序发布
+assets/brand/               品牌 SVG、应用 ICO、设计预览
+scripts/                    构建、发布、品牌导出脚本
+docs/                       当前说明、架构、历史设计与发布记录
+.github/                    问题模板与 Windows 构建检查
+Qige.slnx                   解决方案
+.local/                     本机开发数据及归档（不提交）
+.build/                     SDK 缓存、测试结果、临时输出（不提交）
+artifacts/                  发布包与品牌导出（不提交）
+```
+
+```powershell
+.\build.ps1                         # 编译完整解决方案
+.\build.ps1 -Task Test              # 数据目录、迁移、收纳与冲突恢复
+.\build.ps1 -Task Demo              # 本机隔离样例
+.\build.ps1 -Task Run               # 使用 .local/QigeData 的真实桌面模式
+.\build.ps1 -Task ResidentTest      # 托盘、单实例及模拟桌面恢复
+.\build.ps1 -Task StorageRenderTest # 面板、动画、OLE 与 120 次移动
+.\build.ps1 -Task IconTest          # 快捷方式图标解析
+.\publish.ps1                      # 自带运行时的 win-x64 ZIP 和 SHA256
+pwsh -STA -File scripts/build-brand.ps1 # 导出到 artifacts/brand
+```
+
+桌面相关检查需在已登录的 Windows 桌面会话运行；CI 只运行不依赖交互桌面的数据检查。发布输出在 `artifacts/releases`，仅打包正式应用和指定用户文档，不含个人数据、测试工具或开发缓存。
+
+[开发说明](docs/development.md) · [当前架构](docs/architecture.md) · [品牌说明](docs/brand.md) · [历史文档](docs/history/README.md)
+
+反馈请通过 Issues 提供复现步骤与系统环境。诊断含本机路径等信息，分享前先脱敏；不要上传个人快捷方式、整个 `QigeData` 或历史数据目录。本项目自行实现，不包含 Fences 的代码或资源。

@@ -1,0 +1,38 @@
+using System.IO;
+using System.Runtime.InteropServices;
+
+namespace DesktopGroups;
+
+internal static class DemoContent
+{
+    public static ShortcutStore Create(AppStorage storage)
+    {
+        var relative = $"samples/{Guid.NewGuid():N}";
+        var desktop = storage.Resolve(relative + "/Desktop");
+        Directory.CreateDirectory(desktop);
+        CreateLink(Path.Combine(desktop, "项目文件夹.lnk"), storage.Root);
+        CreateLink(Path.Combine(desktop, "使用说明.lnk"), Path.Combine(storage.InstallDirectory, "使用说明.md"));
+        CreateLink(Path.Combine(desktop, "计算器.lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "calc.exe"));
+        var store = new ShortcutStore(storage, desktop, relative + "/profile.json", relative + "/Storage");
+        foreach (var path in Directory.GetFiles(desktop)) store.Add(path);
+        return store;
+    }
+
+    private static void CreateLink(string path, string target, string arguments = "")
+    {
+        object? shell = null, link = null;
+        try
+        {
+            shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)!)!;
+            link = ((dynamic)shell).CreateShortcut(path);
+            ((dynamic)link).TargetPath = target;
+            ((dynamic)link).Arguments = arguments;
+            ((dynamic)link).Save();
+        }
+        finally
+        {
+            if (link != null && Marshal.IsComObject(link)) Marshal.ReleaseComObject(link);
+            if (shell != null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
+        }
+    }
+}

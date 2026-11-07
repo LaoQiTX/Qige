@@ -20,4 +20,4 @@ body:
     id: details
     attributes:
       label: 补充信息
-      description: 可补充截图或脱敏诊断。不要上传个人快捷方式、完整 Data 或 Storage。
+      description: 可补充截图或脱敏诊断。不要上传个人快捷方式、完整 QigeData、旧版 Data 或 Storage。
