@@ -223,7 +223,6 @@ internal sealed partial class StorageWindow : Window
     private void UpdateRow(DrawerRuntime runtime)
     {
         runtime.Row.Issue = runtime.Issue; RefreshRowPresentation(runtime); runtime.Row.Refresh();
-        DrawerCountLabel.Text = $"{rows.Count} 个桌面整理抽屉";
         if (Selected?.Id == runtime.Definition.Id) FillIssue(runtime);
     }
     private void FillIssue(DrawerRuntime runtime)
@@ -310,7 +309,6 @@ internal sealed partial class StorageWindow : Window
         var row = Selected;
         DetailView.Visibility = row == null ? Visibility.Collapsed : Visibility.Visible;
         EmptyView.Visibility = row == null ? Visibility.Visible : Visibility.Collapsed;
-        DrawerCountLabel.Text = $"{rows.Count} 个桌面整理抽屉";
         if (row == null) { currentContents = []; ContentsList.ItemsSource = null; FillStudioContents(); RefreshOverview(); return; }
         updating = true;
         try

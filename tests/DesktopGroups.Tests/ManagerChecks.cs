@@ -88,7 +88,7 @@ internal static class ManagerChecks
                 first.Configure("常用", 420, 352, true);
                 Check(first.LayoutLocked, "layout locking reaches the native panel");
                 first.RestoreFolded(true);
-                Check(first.Height == 46, "folded drawer keeps its title bar after resizing");
+                Check(first.IsFolded && !first.IsExpanded && Math.Abs(first.Height - 46 * first.Width / first.LogicalWidth) <= 1, "folded drawer keeps its title bar after resizing at the current display scale");
                 first.RestoreFolded(false);
                 first.SetFolded(true);
                 Check(((System.Windows.Controls.CheckBox)window.FindName("FoldBox")).IsChecked == true,

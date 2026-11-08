@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [string]$Version = '0.1.0-beta.6',
+    [string]$Version = '0.1.0-beta.7',
     [switch]$FrameworkDependent
 )
 $ErrorActionPreference = 'Stop'

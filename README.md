@@ -4,7 +4,7 @@
 
 ![栖格品牌设计](assets/brand/qige-brand-preview.png)
 
-当前版本为 **[v0.1.0-beta.6](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.6)**，小范围测试阶段。新增蓝白双模式管理面板，统一应用图标，并修复样例关闭后的托盘驻留。[运行效果与发布说明](docs/releases/v0.1.0-beta.6.md) · [更新记录](CHANGELOG.md)。
+当前版本为 **[v0.1.0-beta.7](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.7)**，小范围测试阶段。工作台左侧按设计稿更新搜索、分组计数、抽屉选中样式及底部偏好设置。[运行效果与发布说明](docs/releases/v0.1.0-beta.7.md) · [更新记录](CHANGELOG.md)。
 
 ## 使用
 

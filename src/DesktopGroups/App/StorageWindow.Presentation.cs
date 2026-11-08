@@ -25,6 +25,7 @@ internal sealed partial class StorageWindow
     {
         canvasRows = new ListCollectionView(rows) { Filter = MatchesCanvas };
         studioRows = new ListCollectionView(rows) { Filter = MatchesSearch };
+        studioRows.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DrawerRow.NavigationGroup)));
         CanvasDrawerList.ItemsSource = canvasRows;
         DrawerList.ItemsSource = studioRows;
     }
@@ -119,6 +120,7 @@ internal sealed partial class StorageWindow
         studioRows.Refresh();
         if (previous != null && studioRows.Contains(previous)) DrawerList.SelectedItem = previous;
         else DrawerList.SelectedItem = studioRows.Cast<DrawerRow>().FirstOrDefault();
+        StudioNoMatches.Visibility = studioRows.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateDetail();
     }
     private IReadOnlyList<ManagerContent> BuildContents(ShortcutStore store)
