@@ -18,15 +18,16 @@ internal sealed class ResidentTray : IDisposable
     private readonly uint taskbarCreated = RegisterWindowMessage("TaskbarCreated");
     private readonly Action<TrayCommand> command;
     private readonly Func<bool> startupEnabled;
+    private readonly bool startupAvailable;
     private bool disposed;
     public bool Available { get; private set; }
     public nint Handle => source.Handle;
     public int RegistrationCount { get; private set; }
     public event Action<string>? EnvironmentChanged;
 
-    public ResidentTray(string root, Action<TrayCommand> command, Func<bool> startupEnabled)
+    public ResidentTray(string root, Action<TrayCommand> command, Func<bool> startupEnabled, bool startupAvailable = true)
     {
-        this.command = command; this.startupEnabled = startupEnabled;
+        this.command = command; this.startupEnabled = startupEnabled; this.startupAvailable = startupAvailable;
         id = new Guid(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(root.ToUpperInvariant()))[..16]);
         source = new HwndSource(new HwndSourceParameters("栖格 Qige · 常驻消息")
         {
@@ -80,13 +81,13 @@ internal sealed class ResidentTray : IDisposable
         if (menu == 0) return;
         try
         {
-            AppendMenu(menu, 0, (nuint)TrayCommand.Show, "打开控制窗口");
+            AppendMenu(menu, 0, (nuint)TrayCommand.Show, "打开管理面板");
             AppendMenu(menu, 0, (nuint)TrayCommand.Locate, "找回分区");
             AppendMenu(menu, 0x800, 0, null);
             AppendMenu(menu, 0, (nuint)TrayCommand.Restore, "全部归还桌面");
             AppendMenu(menu, 0, (nuint)TrayCommand.Recollect, "按分组重新收纳");
             AppendMenu(menu, 0x800, 0, null);
-            AppendMenu(menu, startupEnabled() ? 8u : 0u, (nuint)TrayCommand.Startup, "开机启动");
+            AppendMenu(menu, (startupEnabled() ? 8u : 0u) | (startupAvailable ? 0u : 1u), (nuint)TrayCommand.Startup, "开机启动");
             AppendMenu(menu, 0, (nuint)TrayCommand.Exit, "退出并归还桌面");
             DesktopAttachment.GetCursorPos(out var cursor);
             SetForegroundWindow(Handle);

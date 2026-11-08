@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>栖格 Qige - 蓝白高级配色提案 (基于原版 Logo)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: #F4F6F9;
+      color: #0F172A;
+    }
+    /* 极致微质感 */
+    .porcelain-card {
+      background: #FFFFFF;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 20px 40px -15px rgba(15, 23, 42, 0.05);
+    }
+    .deep-card {
+      background: #0B132B;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 50px -12px rgba(11, 19, 43, 0.5);
+    }
+    .app-icon-shadow {
+      box-shadow: 0 12px 32px -8px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.06);
+    }
+    .app-icon-dark-shadow {
+      box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+  </style>
+</head>
+<body class="h-full overflow-y-auto p-6 md:p-10 select-none">
+
+  <!-- 头部导言 -->
+  <header class="max-w-6xl mx-auto mb-10">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-semibold mb-3">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+          原版 Logo 保持 · 蓝白高级配色专案
+        </div>
+        <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
+          栖格 Qige · 简约高级蓝白调色盘
+        </h1>
+        <p class="text-sm text-slate-500 mt-2 max-w-2xl leading-relaxed">
+          保留你原有的完整几何形态（外框粗度、圆角、右下小方块与开口位置完全不变）。通过调配高阶色相偏转、双蓝明度对话与瓷白衬底，彻底规避“默认塑料蓝”的廉价感。
+        </p>
+      </div>
+
+      <!-- 实时方案选择标签 -->
+      <div class="flex items-center gap-1.5 bg-white p-1.5 rounded-xl border border-slate-200 shadow-xs self-start md:self-auto">
+        <button onclick="switchScheme('deep-sea')" id="tab-deep-sea" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white shadow-xs transition-all">
+          方案 1 · 海渊双蓝 (最显高级)
+        </button>
+        <button onclick="switchScheme('glacial')" id="tab-glacial" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all">
+          方案 2 · 冰川瓷蓝 (极净轻盈)
+        </button>
+        <button onclick="switchScheme('cobalt')" id="tab-cobalt" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all">
+          方案 3 · 皇家单色钴蓝 (纯粹极简)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto space-y-12">
+
+    <!-- 1. 核心 Logo 展示大画板 (原版图形 1:1 渲染) -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span class="w-1.5 h-4 bg-blue-600 rounded-full"></span>
+          1. 原版图形的蓝白质感重现 (浅底白背景 vs 深色桌面)
+        </h2>
+        <span class="text-xs text-slate-400 font-mono">1:1 EXACT ORIGINAL GEOMETRY</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- 浅色瓷白背景卡片 -->
+        <div class="porcelain-card p-8 rounded-2xl flex flex-col justify-between h-[300px]">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Light Mode · 浅色白底</span>
+            <span class="text-[11px] font-mono text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-medium" id="light-tag">
+              海渊藏青 + 宝石钴蓝
+            </span>
+          </div>
+
+          <!-- 原版 Logo + 字体居中呈现 -->
+          <div class="flex items-center justify-center gap-6">
+            <!-- 原版 Logo 精准矢量 -->
+            <svg width="84" height="84" viewBox="0 0 100 100" fill="none" class="shrink-0 overflow-visible">
+              <!-- 外收纳框 (保留原版线条与圆角) -->
+              <path id="svg-light-frame" d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                    stroke="#0F1D38" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" class="transition-colors duration-300"/>
+              <!-- 独立右下小方块 (保留原版尺寸与圆角) -->
+              <rect id="svg-light-block" x="54" y="58" width="28" height="28" rx="8"
+                    fill="#2563EB" class="transition-colors duration-300"/>
+            </svg>
+
+            <!-- 文字排版 -->
+            <div class="space-y-0.5">
+              <div class="text-3xl font-extrabold tracking-tight font-sans transition-colors duration-300" id="typo-light-cn" style="color: #0F1D38;">
+                栖格
+              </div>
+              <div class="text-lg font-semibold tracking-wide font-sans transition-colors duration-300" id="typo-light-en" style="color: #4B5E80;">
+                Qige
+              </div>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-500 border-t border-slate-100 pt-3 flex items-center justify-between">
+            <span>外框：沉稳海渊青黑（沉静稳重）</span>
+            <span>小方块：高光钴蓝（灵动入座）</span>
+          </div>
+        </div>
+
+        <!-- 深色暗夜蓝背景卡片 -->
+        <div class="deep-card p-8 rounded-2xl flex flex-col justify-between h-[300px]">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Dark Mode · 深蓝夜景</span>
+            <span class="text-[11px] font-mono text-cyan-300 bg-white/10 px-2 py-0.5 rounded font-medium">
+              冰霜白框 + 电光天青
+            </span>
+          </div>
+
+          <!-- 原版 Logo + 字体居中呈现 -->
+          <div class="flex items-center justify-center gap-6">
+            <svg width="84" height="84" viewBox="0 0 100 100" fill="none" class="shrink-0 overflow-visible">
+              <path id="svg-dark-frame" d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                    stroke="#E2E8F0" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" class="transition-colors duration-300"/>
+              <rect id="svg-dark-block" x="54" y="58" width="28" height="28" rx="8"
+                    fill="#38BDF8" class="transition-colors duration-300"/>
+            </svg>
+
+            <div class="space-y-0.5">
+              <div class="text-3xl font-extrabold tracking-tight font-sans text-white">
+                栖格
+              </div>
+              <div class="text-lg font-semibold tracking-wide font-sans text-slate-400">
+                Qige
+              </div>
+            </div>
+          </div>
+
+          <div class="text-xs text-slate-400 border-t border-white/10 pt-3 flex items-center justify-between">
+            <span>外框：纯粹霜白（高反差清晰度）</span>
+            <span>小方块：透光天青（如同发光抽屉）</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 2. 三套高级蓝白配色卡片详解 -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span class="w-1.5 h-4 bg-blue-600 rounded-full"></span>
+          2. 三组专调蓝白方案对比（杜绝廉价感的核心秘密）
+        </h2>
+        <span class="text-xs text-slate-400">点击卡片即可在上方画板实时生效</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+        <!-- 方案 1: 海渊双蓝 (最显高级) -->
+        <div onclick="switchScheme('deep-sea')" class="porcelain-card p-5 rounded-2xl cursor-pointer hover:border-blue-500 transition-all border-2 border-blue-600 space-y-3.5" id="card-deep-sea">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#0F1D38]"></span>
+              方案 1 · 海渊双蓝 (强烈推荐)
+            </span>
+            <span class="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">RECOMMENDED</span>
+          </div>
+
+          <p class="text-xs text-slate-600 leading-relaxed">
+            <strong>为什么不廉价？</strong> 外框采用带微量深蓝调的深青黑（Deep Navy），避免纯黑的死板；小方格采用纯正钴蓝（Royal Cobalt）。一深一亮，像珠宝盒般精巧。
+          </p>
+
+          <div class="space-y-1.5 pt-1 text-[11px] font-mono">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#0F1D38] text-white">
+              <span>外框海渊色</span>
+              <span>#0F1D38</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#2563EB] text-white">
+              <span>小方块钴蓝</span>
+              <span>#2563EB</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#F8FAFC] text-slate-700 border border-slate-200">
+              <span>骨瓷白底</span>
+              <span>#FFFFFF / #F8FAFC</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 方案 2: 冰川瓷蓝 (极净轻盈) -->
+        <div onclick="switchScheme('glacial')" class="porcelain-card p-5 rounded-2xl cursor-pointer hover:border-blue-500 transition-all border border-slate-200 space-y-3.5" id="card-glacial">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#1E40AF]"></span>
+              方案 2 · 冰川瓷蓝 (冷冽透气)
+            </span>
+            <span class="text-[10px] bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded-full">NORDIC</span>
+          </div>
+
+          <p class="text-xs text-slate-600 leading-relaxed">
+            <strong>为什么不廉价？</strong> 外框采用冷冽克制的宝蓝（Sapphire Blue），而小方块采用具有微质感的淡冰蓝霜白色（Glacial Frost）。非常干净，极具北欧家具设计感。
+          </p>
+
+          <div class="space-y-1.5 pt-1 text-[11px] font-mono">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#1E40AF] text-white">
+              <span>外框宝石蓝</span>
+              <span>#1E40AF</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#BFDBFE] text-[#1E3A8A]">
+              <span>小方块冰川淡蓝</span>
+              <span>#BFDBFE</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#FFFFFF] text-slate-700 border border-slate-200">
+              <span>纯净瓷白</span>
+              <span>#FFFFFF</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 方案 3: 皇家单色钴蓝 (纯粹极简) -->
+        <div onclick="switchScheme('cobalt')" class="porcelain-card p-5 rounded-2xl cursor-pointer hover:border-blue-500 transition-all border border-slate-200 space-y-3.5" id="card-cobalt">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#1D4ED8]"></span>
+              方案 3 · 皇家单色蔚蓝 (纯粹极简)
+            </span>
+            <span class="text-[10px] bg-slate-100 text-slate-600 font-mono px-2 py-0.5 rounded-full">MONOCHROME</span>
+          </div>
+
+          <p class="text-xs text-slate-600 leading-relaxed">
+            <strong>为什么不廉价？</strong> 整个图形统一使用单一经典蔚蓝（Azure Blue），只在白底上呈现极致张力。去除所有多余花哨，靠精确纯粹的蓝白反差塑造权威与利落。
+          </p>
+
+          <div class="space-y-1.5 pt-1 text-[11px] font-mono">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#1D4ED8] text-white">
+              <span>全标单一标志蓝</span>
+              <span>#1D4ED8</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#EFF6FF] text-[#1E40AF]">
+              <span>浅色托盘环境</span>
+              <span>#EFF6FF</span>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-[#FFFFFF] text-slate-700 border border-slate-200">
+              <span>极简纯白</span>
+              <span>#FFFFFF</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 3. 应用图标 App Icon 与 Windows 11 实景呈现 -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span class="w-1.5 h-4 bg-blue-600 rounded-full"></span>
+          3. Windows 11 原生应用图标落地效果
+        </h2>
+        <span class="text-xs text-slate-400">大尺寸 App Icon (128px) · 任务栏 (40px)</span>
+      </div>
+
+      <div class="porcelain-card p-8 rounded-2xl grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+
+        <!-- 图标 A: 浅色桌面图标 (白底立体浮雕 · 完美契合 Win11) -->
+        <div class="flex flex-col items-center text-center space-y-3">
+          <div class="w-28 h-28 rounded-[26px] bg-white app-icon-shadow flex items-center justify-center relative overflow-hidden group hover:scale-105 transition-transform" id="app-icon-light-box">
+            <svg width="68" height="68" viewBox="0 0 100 100" fill="none">
+              <path id="icon-light-frame" d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                    stroke="#0F1D38" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect id="icon-light-block" x="54" y="58" width="28" height="28" rx="8" fill="#2563EB"/>
+            </svg>
+          </div>
+          <div class="text-xs font-bold text-slate-900">白底立体 App Icon (推荐)</div>
+          <div class="text-[11px] text-slate-500">放桌面壁纸或 Dock 栏上干净利落</div>
+        </div>
+
+        <!-- 图标 B: 深海蓝底应用图标 (深邃尊贵) -->
+        <div class="flex flex-col items-center text-center space-y-3">
+          <div class="w-28 h-28 rounded-[26px] bg-[#0F1D38] app-icon-dark-shadow flex items-center justify-center relative overflow-hidden group hover:scale-105 transition-transform" id="app-icon-dark-box">
+            <svg width="68" height="68" viewBox="0 0 100 100" fill="none">
+              <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                    stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect d="" x="54" y="58" width="28" height="28" rx="8" fill="#38BDF8"/>
+            </svg>
+          </div>
+          <div class="text-xs font-bold text-slate-900">深海蓝底 App Icon</div>
+          <div class="text-[11px] text-slate-500">像一件深海珐琅器物，科技质感浓郁</div>
+        </div>
+
+        <!-- 图标 C: Windows 11 任务栏原生适配 -->
+        <div class="flex flex-col items-center text-center space-y-4">
+          <!-- 模拟 Windows 11 底部任务栏 -->
+          <div class="h-14 px-4 bg-white/80 backdrop-blur-md border border-slate-200/80 shadow-md rounded-2xl flex items-center gap-3">
+            <div class="w-7 h-7 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center text-xs">❖</div>
+
+            <!-- 栖格常驻任务栏图标 -->
+            <div class="w-9 h-9 rounded-xl bg-blue-50/80 hover:bg-blue-100/80 transition-colors flex items-center justify-center relative cursor-pointer group">
+              <svg width="22" height="22" viewBox="0 0 100 100" fill="none">
+                <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                      stroke="#0F1D38" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="54" y="58" width="28" height="28" rx="8" fill="#2563EB"/>
+              </svg>
+              <!-- 任务栏活动指示条 -->
+              <span class="w-2 h-1 rounded-full bg-blue-600 absolute -bottom-1"></span>
+            </div>
+
+            <div class="w-7 h-7 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center text-xs">📁</div>
+          </div>
+          <div class="text-xs font-bold text-slate-900">Windows 11 浅色任务栏</div>
+          <div class="text-[11px] text-slate-500">小尺寸下 Q 的辨识度与通透感拉满</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 4. 在管理面板与桌面整理体验中的落地呈现 -->
+    <section class="porcelain-card p-6 rounded-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-[#0F1D38] flex items-center justify-center p-1.5 shadow-xs">
+            <svg width="22" height="22" viewBox="0 0 100 100" fill="none">
+              <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                    stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+              <rect x="54" y="58" width="28" height="28" rx="8" fill="#38BDF8"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-slate-900">栖格 Qige</span>
+              <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-100">
+                蓝白纯净版
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-500">已无缝融入管理面板与桌面浮动抽屉</p>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500">
+          白净无瑕 · 秩序感 · 长期耐看
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600">
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/60 space-y-1">
+          <span class="font-bold text-slate-800">避免廉价的关键法则：</span>
+          <p class="leading-relaxed">
+            绝对不用饱和度 100% 的高亮纯蓝（#0000FF），那会散发工业廉价软件的味道。我们选用带微量青黑调的深海渊蓝作为骨架，配以国际标准克莱因/皇家钴蓝作为灵魂点睛。
+          </p>
+        </div>
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/60 space-y-1">
+          <span class="font-bold text-slate-800">与 Windows 11 桌面的契合度：</span>
+          <p class="leading-relaxed">
+            蓝色与白色是微软 Windows 系统的视觉 DNA。这套配色能自然隐入桌面，不管是作为开机自启常驻工具，还是用于日常分类抽屉，都不会争抢视觉焦点。
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 调色交互脚本 -->
+  <script>
+    const schemes = {
+      'deep-sea': {
+        frameLight: '#0F1D38',
+        blockLight: '#2563EB',
+        typoCnLight: '#0F1D38',
+        typoEnLight: '#4B5E80',
+        tag: '海渊藏青 + 宝石钴蓝 (主推)',
+        activeCard: 'card-deep-sea',
+        activeTab: 'tab-deep-sea'
+      },
+      'glacial': {
+        frameLight: '#1E40AF',
+        blockLight: '#BFDBFE',
+        typoCnLight: '#1E40AF',
+        typoEnLight: '#60A5FA',
+        tag: '宝石蓝 + 冰川霜蓝 (极净)',
+        activeCard: 'card-glacial',
+        activeTab: 'tab-glacial'
+      },
+      'cobalt': {
+        frameLight: '#1D4ED8',
+        blockLight: '#1D4ED8',
+        typoCnLight: '#1D4ED8',
+        typoEnLight: '#3B82F6',
+        tag: '皇家单色蔚蓝 (极简)',
+        activeCard: 'card-cobalt',
+        activeTab: 'tab-cobalt'
+      }
+    };
+
+    function switchScheme(name) {
+      const s = schemes[name];
+      if (!s) return;
+
+      // 更新浅色 Logo
+      document.getElementById('svg-light-frame').setAttribute('stroke', s.frameLight);
+      document.getElementById('svg-light-block').setAttribute('fill', s.blockLight);
+      document.getElementById('icon-light-frame').setAttribute('stroke', s.frameLight);
+      document.getElementById('icon-light-block').setAttribute('fill', s.blockLight);
+
+      // 更新字体
+      document.getElementById('typo-light-cn').style.color = s.typoCnLight;
+      document.getElementById('typo-light-en').style.color = s.typoEnLight;
+      document.getElementById('light-tag').innerText = s.tag;
+
+      // 更新卡片外框状态
+      ['card-deep-sea', 'card-glacial', 'card-cobalt'].forEach(id => {
+        const c = document.getElementById(id);
+        if (id === s.activeCard) {
+          c.className = 'porcelain-card p-5 rounded-2xl cursor-pointer hover:border-blue-500 transition-all border-2 border-blue-600 space-y-3.5';
+        } else {
+          c.className = 'porcelain-card p-5 rounded-2xl cursor-pointer hover:border-blue-500 transition-all border border-slate-200 space-y-3.5';
+        }
+      });
+
+      // 更新顶栏 Tab
+      ['tab-deep-sea', 'tab-glacial', 'tab-cobalt'].forEach(id => {
+        const t = document.getElementById(id);
+        if (id === s.activeTab) {
+          t.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white shadow-xs transition-all';
+        } else {
+          t.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition-all';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

@@ -75,7 +75,7 @@ internal sealed class PanelDropTarget(Func<IReadOnlyList<string>, bool> canAccep
         {
             if (medium.tymed != TYMED.TYMED_HGLOBAL || medium.unionmember == 0) return [];
             var count = DragQueryFile(medium.unionmember, uint.MaxValue, null, 0);
-            if (count == 0 || count > 12) return [];
+            if (count == 0 || count > 4096) return [];
             var result = new List<string>();
             for (uint index = 0; index < count; index++)
             {

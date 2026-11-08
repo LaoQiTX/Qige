@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>栖格 Qige - 桌面抽屉管理工作台 (双模合一版)</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      background: #ECEFF3;
+      color: #0F1D38;
+    }
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(15, 29, 56, 0.12);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(15, 29, 56, 0.22);
+    }
+    .app-window {
+      box-shadow: 0 28px 65px -15px rgba(15, 29, 56, 0.13), 0 0 0 1px rgba(15, 29, 56, 0.08);
+    }
+    .hover-subtle:hover {
+      background-color: rgba(15, 29, 56, 0.035);
+    }
+    /* 空间沙盘微网格背景 */
+    .desktop-canvas-grid {
+      background-color: #F8FAFC;
+      background-image: radial-gradient(rgba(15, 29, 56, 0.06) 1px, transparent 1px);
+      background-size: 18px 18px;
+    }
+    .bento-card-active {
+      box-shadow: 0 0 0 2px #2563EB, 0 12px 28px -6px rgba(37, 99, 235, 0.12);
+    }
+  </style>
+</head>
+<body class="h-full flex items-center justify-center p-4 antialiased overflow-hidden">
+
+  <!-- 模拟 Windows 11 应用宿主窗口 (标准 1100x710 比例) -->
+  <div class="app-window w-full max-w-[1100px] h-[710px] bg-white rounded-2xl flex flex-col overflow-hidden relative border border-slate-200">
+
+    <!-- 1. 顶层全局标题栏 (包含品牌、模式切换器、新建抽屉与系统控制) -->
+    <header class="h-12 bg-white border-b border-slate-100 flex items-center justify-between px-5 select-none shrink-0 z-20">
+
+      <!-- 左侧：品牌 Logo 与状态标识 -->
+      <div class="flex items-center gap-3">
+        <!-- 栖格方案一原版矢量 Icon (海渊深藏青 #0F1D38 + 宝石钴蓝 #2563EB) -->
+        <div class="w-6 h-6 flex items-center justify-center shrink-0">
+          <svg width="22" height="22" viewBox="0 0 100 100" fill="none">
+            <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+                  stroke="#0F1D38" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="54" y="58" width="28" height="28" rx="8" fill="#2563EB"/>
+          </svg>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold tracking-tight text-[#0F1D38]">栖格 Qige</span>
+          <span class="text-slate-300">/</span>
+          <span class="text-[11px] text-slate-500 font-medium">桌面管理</span>
+          <span class="ml-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 text-[11px] font-medium border border-slate-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+            桌面守护中 (4 个抽屉)
+          </span>
+        </div>
+      </div>
+
+      <!-- 中间核心创新：双模式分段控制器 (Segmented Mode Switcher) -->
+      <div class="flex items-center bg-slate-100/90 p-0.5 rounded-xl border border-slate-200/70 text-xs">
+        <button onclick="switchMainView('canvas')" id="btn-mode-canvas" class="px-3 py-1 rounded-lg text-xs font-semibold bg-white text-[#0F1D38] shadow-xs flex items-center gap-1.5 transition-all">
+          <svg class="w-3.5 h-3.5 text-[#2563EB]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          空间沙盘 (Bento)
+        </button>
+        <button onclick="switchMainView('studio')" id="btn-mode-studio" class="px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-900 flex items-center gap-1.5 transition-all">
+          <svg class="w-3.5 h-3.5 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          工作台详情 (Studio)
+        </button>
+      </div>
+
+      <!-- 右侧控制区 -->
+      <div class="flex items-center gap-3">
+        <!-- 新建抽屉按钮 -->
+        <button onclick="openCreateModal()" class="px-3 py-1.5 rounded-lg bg-[#0F1D38] text-white hover:bg-[#1E2E4F] text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-all">
+          <svg class="w-3 h-3 text-blue-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新建抽屉
+        </button>
+
+        <span class="text-[11px] text-slate-400">关闭后台常驻</span>
+
+        <!-- 窗口按钮 -->
+        <div class="flex items-center -mr-1">
+          <button class="w-8 h-7 flex items-center justify-center text-slate-500 hover-subtle rounded transition-colors" title="最小化">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+          </button>
+          <button class="w-8 h-7 flex items-center justify-center text-slate-500 hover-subtle rounded transition-colors" title="最大化">
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          </button>
+          <button onclick="openCloseModal()" class="w-8 h-7 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 rounded transition-colors" title="关闭窗口">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 2. 主体区 A: 【空间沙盘模式 (Bento Canvas Mode)】默认优先展现宏观桌面 -->
+    <div id="main-view-canvas" class="flex-1 flex overflow-hidden">
+
+      <!-- [沙盘主视图] 桌面微缩沙盘 Bento Deck (占 62%) -->
+      <section class="flex-1 desktop-canvas-grid p-6 overflow-y-auto flex flex-col justify-between relative border-r border-slate-200">
+
+        <!-- 沙盘操作工具条 (包含多显示器切换与桌面双击隐藏联动) -->
+        <div class="flex items-center justify-between mb-4 select-none">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">Desktop Canvas</span>
+            <span class="text-xs text-slate-500">· 真实桌面空间分布沙盘</span>
+          </div>
+
+          <!-- 显示器选择胶囊 -->
+          <div class="flex items-center bg-white p-0.5 rounded-lg border border-slate-200 text-xs shadow-xs">
+            <button class="px-2.5 py-0.5 rounded-md bg-slate-100 text-[#0F1D38] font-semibold flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+              主显示器 Dell 27" (3 个抽屉)
+            </button>
+            <button class="px-2.5 py-0.5 rounded-md text-slate-400 hover:text-slate-700">
+              拓展副屏 (1 个)
+            </button>
+          </div>
+        </div>
+
+        <!-- Bento 抽屉矩阵网格 (将各个物理抽屉直观卡片化) -->
+        <div class="grid grid-cols-2 gap-4 flex-1">
+
+          <!-- Bento 1: 「常用工作台」桌面整理抽屉 (激活态 · 平铺真实大 ico 网格) -->
+          <div onclick="selectBentoDrawer('drawer-1')" id="bento-drawer-1" class="bento-card bento-card-active bg-white rounded-2xl p-4 border border-slate-200 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md relative group">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[#0F1D38]">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="9" x2="21" y2="9" />
+                    <line x1="9" y1="21" x2="9" y2="9" />
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-[#0F1D38]">常用工作台</h4>
+                  <div class="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                    <span>桌面整理</span>
+                    <span>·</span>
+                    <span class="text-[#2563EB] font-medium">主屏右上贴边</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 闪烁定位按钮 -->
+              <button onclick="event.stopPropagation(); triggerLocate('常用工作台')" class="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-[#2563EB]" title="在桌面上闪烁定位">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M3 12h3m12 0h3M12 3v3m0 12v3"/></svg>
+              </button>
+            </div>
+
+            <!-- 抽屉大图标真实 .ico 预览网格 -->
+            <div class="py-3 px-2 grid grid-cols-4 gap-2 bg-slate-50/70 rounded-xl my-2 border border-slate-100">
+              <!-- Figma.lnk 真实 ico (带快捷方式角标) -->
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="relative w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 38 57" fill="none">
+                    <path d="M19 28.5C19 23.2533 23.2533 19 28.5 19C33.7467 19 38 23.2533 38 28.5C38 33.7467 33.7467 38 28.5 38C23.2533 38 19 33.7467 19 28.5Z" fill="#1ABCFE"/>
+                    <path d="M0 47.5C0 42.2533 4.25329 38 9.5 38H19V47.5C19 52.7467 14.7467 57 9.5 57C4.25329 57 0 52.7467 0 47.5Z" fill="#0ACF83"/>
+                    <path d="M19 0V19H28.5C33.7467 19 38 14.7467 38 9.5C38 4.25329 33.7467 0 28.5 0H19Z" fill="#FF7262"/>
+                    <path d="M0 9.5C0 14.7467 4.25329 19 9.5 19H19V0H9.5C4.25329 0 0 4.25329 0 9.5Z" fill="#F24E1E"/>
+                    <path d="M0 28.5C0 33.7467 4.25329 38 9.5 38H19V19H9.5C4.25329 19 0 23.2533 0 28.5Z" fill="#A259FF"/>
+                  </svg>
+                  <span class="absolute -bottom-0.5 -left-0.5 w-2.5 h-2.5 bg-white border border-slate-300 rounded-[2px] flex items-center justify-center">
+                    <svg class="w-1.5 h-1.5 text-[#2563EB]" viewBox="0 0 24 24" fill="currentColor"><path d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                  </span>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">Figma</span>
+              </div>
+
+              <!-- 需求排期.xlsx 真实 ico -->
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 32 32" fill="none">
+                    <rect x="2" y="8" width="14" height="16" rx="2" fill="#107C41"/>
+                    <path d="M6 13L8.5 16L6 19H7.8L9.2 17.2L10.6 19H12.4L9.9 16L12.4 13H10.6L9.2 14.8L7.8 13H6Z" fill="white"/>
+                    <path d="M18 13H26V15H18V13ZM18 17H26V19H18V17Z" fill="#21A366"/>
+                  </svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">排期表</span>
+              </div>
+
+              <!-- 草图.png 缩略 ico -->
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-slate-200 to-blue-50 border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">草图.png</span>
+              </div>
+
+              <!-- Fluent 文件夹 ico -->
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 32 32" fill="none">
+                    <path d="M4 7C4 5.89543 4.89543 5 6 5H12.3431L15.4142 7.24264H26C27.1046 7.82843 28 8.723 28 9.82843V12H4V7Z" fill="#F0A500"/>
+                    <path d="M2 13C2 11.8954 2.89543 11 4 11H28V24C28 25.1046 27.1046 26 26 26H4C2.89543 26 2 25.1046 2 24V13Z" fill="#FFC83B"/>
+                  </svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">素材包/</span>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+              <span>9 个项目 (常驻展开)</span>
+              <button onclick="event.stopPropagation(); triggerReturn('常用工作台')" class="text-slate-600 hover:text-[#0F1D38] font-medium">一键归还至桌面</button>
+            </div>
+          </div>
+
+          <!-- Bento 2: 「2026 设计资产」文件夹映射抽屉 (悬停手柄状态) -->
+          <div onclick="selectBentoDrawer('drawer-3')" id="bento-drawer-3" class="bento-card bg-white rounded-2xl p-4 border border-slate-200 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md relative group">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-[#0F1D38]">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-[#0F1D38]">2026 设计资产</h4>
+                  <div class="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                    <span>映射抽屉</span>
+                    <span>·</span>
+                    <span class="text-slate-600 font-medium">左边缘悬停展开</span>
+                  </div>
+                </div>
+              </div>
+
+              <button onclick="event.stopPropagation(); triggerLocate('2026 设计资产')" class="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-600" title="在桌面上闪烁定位">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M3 12h3m12 0h3M12 3v3m0 12v3"/></svg>
+              </button>
+            </div>
+
+            <!-- 内容缩略 -->
+            <div class="py-3 px-2 grid grid-cols-4 gap-2 bg-slate-50/70 rounded-xl my-2 border border-slate-100">
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 32 32" fill="none"><path d="M6 3H20L28 11V27C28 28.1 27.1 29 26 29H6C4.9 29 4 28.1 4 27V5C4 3.9 4.9 3 6 3Z" fill="#F40F02"/><path d="M20 3L28 11H20V3Z" fill="#FFA5A0"/><path d="M10 16H13V18H10V22H8V14H13C14.1 14 15 14.9 15 16V18C15 19.1 14.1 20 13 20H10V16Z" fill="white"/></svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">规范.pdf</span>
+              </div>
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 32 32" fill="none"><rect x="2" y="5" width="28" height="22" rx="3" fill="#D04423"/><path d="M16 10V16H22C22 12.7 19.3 10 16 10Z" fill="white"/></svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">提案.pptx</span>
+              </div>
+              <div class="flex flex-col items-center text-center p-1">
+                <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 32 32" fill="none"><path d="M4 7C4 5.9 4.9 5 6 5H12L15 7H26C27.1 7 28 7.9 28 9V12H4V7Z" fill="#F0A500"/><path d="M2 13C2 11.9 2.9 11 4 11H28V24C28 25.1 27.1 26 26 26H4C2.9 26 2 25.1 2 24V13Z" fill="#FFC83B"/></svg>
+                </div>
+                <span class="text-[9px] text-slate-500 truncate w-12 mt-1">Icons/</span>
+              </div>
+              <div class="flex flex-col items-center justify-center text-[10px] text-slate-400 font-mono">
+                +21 项
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+              <span class="font-mono truncate max-w-[130px]">D:\DesignVault\</span>
+              <span class="text-slate-600">平时仅露 4px 手柄</span>
+            </div>
+          </div>
+
+          <!-- Bento 3: 「临时便签」桌面整理 (待处理冲突态) -->
+          <div onclick="selectBentoDrawer('drawer-2')" id="bento-drawer-2" class="bento-card bg-white rounded-2xl p-4 border border-slate-200 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md relative group">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-[#0F1D38]">临时便签与收纳</h4>
+                  <div class="text-[10px] text-slate-500 mt-0.5">3 个项目 · 包含 1 项同名冲突</div>
+                </div>
+              </div>
+              <span class="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-medium">需决策</span>
+            </div>
+
+            <div class="p-3 bg-slate-50 rounded-xl my-2 border border-slate-100 text-xs text-slate-600 flex items-center justify-between">
+              <span>Todo_List.txt (桌面已有同名)</span>
+              <span class="text-[#2563EB] font-medium text-[11px]">点击解决</span>
+            </div>
+
+            <div class="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>整理抽屉</span>
+              <span class="text-slate-600">已保护原物理坐标</span>
+            </div>
+          </div>
+
+          <!-- Bento 4: 「项目冷备份」文件夹映射 (设备离线态) -->
+          <div onclick="selectBentoDrawer('drawer-4')" id="bento-drawer-4" class="bento-card bg-white rounded-2xl p-4 border border-slate-200 flex flex-col justify-between cursor-pointer transition-all hover:shadow-md relative group">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-slate-700">项目冷备份 (E:)</h4>
+                  <div class="text-[10px] text-slate-400 mt-0.5">移动硬盘断开 · 桌面已暂隐</div>
+                </div>
+              </div>
+              <span class="text-[10px] font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">离线</span>
+            </div>
+
+            <div class="p-3 bg-slate-50 rounded-xl my-2 border border-slate-100 text-xs text-slate-500 flex items-center justify-between">
+              <span>驱动器 E: 未插入</span>
+              <span class="text-slate-800 font-medium">重定位...</span>
+            </div>
+
+            <div class="text-[11px] text-slate-400 flex items-center justify-between">
+              <span>映射抽屉</span>
+              <span class="text-slate-600">插回设备自动唤醒</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 底栏指引 -->
+        <div class="mt-4 px-4 py-2 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs text-slate-500 select-none">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-[#2563EB]"></span>
+            <span>当前主桌面已安放 4 个抽屉 · 物理坐标守护已激活</span>
+          </div>
+          <span class="text-slate-400 text-[11px]">按住抽屉边缘可在真实桌面随意挪动</span>
+        </div>
+      </section>
+
+      <!-- [透视岛 Inspector Island] (占 38%) 详细管理所选抽屉 -->
+      <aside class="w-[410px] bg-white flex flex-col overflow-hidden shrink-0 select-none">
+        <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div>
+            <div class="flex items-center gap-2">
+              <input type="text" id="inspector-title" value="常用工作台" class="text-sm font-bold text-[#0F1D38] border border-transparent hover:border-slate-200 focus:border-[#2563EB] px-1 py-0.5 rounded outline-none transition-all">
+              <span id="inspector-badge" class="text-[10px] bg-slate-100 text-slate-600 font-medium px-2 py-0.5 rounded">
+                桌面整理
+              </span>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-0.5" id="inspector-subtitle">
+              主显示器 · 右上角贴边 (坐标记忆就绪)
+            </div>
+          </div>
+
+          <!-- 内部视图切换：大图标网格 vs 详细列表 -->
+          <div class="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/60">
+            <button onclick="setInspectorView('grid')" id="btn-view-grid" class="p-1 rounded bg-white text-[#0F1D38] shadow-xs" title="大图标网格">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            </button>
+            <button onclick="setInspectorView('list')" id="btn-view-list" class="p-1 rounded text-slate-500 hover:text-slate-900" title="列表视图">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-5 space-y-5">
+          <!-- 收纳内容大图标网格 (真实 .ico) -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-[#0F1D38]">抽屉内部收纳项</span>
+              <button class="text-[11px] text-[#2563EB] hover:underline font-medium">+ 添加文件</button>
+            </div>
+
+            <!-- 网格视图容器 -->
+            <div id="inspector-grid-view" class="grid grid-cols-3 gap-2.5 p-3 bg-slate-50/70 rounded-xl border border-slate-100">
+              <div class="flex flex-col items-center text-center p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
+                <div class="relative w-9 h-9 flex items-center justify-center my-1">
+                  <svg class="w-6 h-6" viewBox="0 0 38 57" fill="none">
+                    <path d="M19 28.5C19 23.2533 23.2533 19 28.5 19C33.7467 19 38 23.2533 38 28.5C38 33.7467 33.7467 38 28.5 38C23.2533 38 19 33.7467 19 28.5Z" fill="#1ABCFE"/>
+                    <path d="M0 47.5C0 42.2533 4.25329 38 9.5 38H19V47.5C19 52.7467 14.7467 57 9.5 57C4.25329 57 0 52.7467 0 47.5Z" fill="#0ACF83"/>
+                    <path d="M19 0V19H28.5C33.7467 19 38 14.7467 38 9.5C38 4.25329 33.7467 0 28.5 0H19Z" fill="#FF7262"/>
+                    <path d="M0 9.5C0 14.7467 4.25329 19 9.5 19H19V0H9.5C4.25329 0 0 4.25329 0 9.5Z" fill="#F24E1E"/>
+                    <path d="M0 28.5C0 33.7467 4.25329 38 9.5 38H19V19H9.5C4.25329 19 0 23.2533 0 28.5Z" fill="#A259FF"/>
+                  </svg>
+                  <span class="absolute -bottom-1 -left-1 w-3 h-3 bg-white border border-slate-300 rounded-[2px] flex items-center justify-center">
+                    <svg class="w-1.5 h-1.5 text-[#2563EB]" viewBox="0 0 24 24" fill="currentColor"><path d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                  </span>
+                </div>
+                <span class="text-[10px] font-medium text-[#0F1D38] truncate w-full">Figma.lnk</span>
+                <span class="text-[9px] text-slate-400">快捷方式</span>
+              </div>
+
+              <div class="flex flex-col items-center text-center p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
+                <div class="w-9 h-9 flex items-center justify-center my-1">
+                  <svg class="w-6 h-6" viewBox="0 0 32 32" fill="none">
+                    <rect x="2" y="8" width="14" height="16" rx="2" fill="#107C41"/>
+                    <path d="M6 13L8.5 16L6 19H7.8L9.2 17.2L10.6 19H12.4L9.9 16L12.4 13H10.6L9.2 14.8L7.8 13H6Z" fill="white"/>
+                    <path d="M18 13H26V15H18V13ZM18 17H26V19H18V17Z" fill="#21A366"/>
+                  </svg>
+                </div>
+                <span class="text-[10px] font-medium text-[#0F1D38] truncate w-full">排期表.xlsx</span>
+                <span class="text-[9px] text-slate-400">4.2 MB</span>
+              </div>
+
+              <div class="flex flex-col items-center text-center p-2 rounded-lg bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all cursor-pointer group">
+                <div class="w-9 h-9 rounded bg-gradient-to-tr from-slate-200 to-blue-50 flex items-center justify-center my-1 border border-slate-200/50">
+                  <svg class="w-5 h-5 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </div>
+                <span class="text-[10px] font-medium text-[#0F1D38] truncate w-full">草图.png</span>
+                <span class="text-[9px] text-slate-400">1.8 MB</span>
+              </div>
+            </div>
+
+            <!-- 列表视图容器 -->
+            <div id="inspector-list-view" class="space-y-1.5 hidden">
+              <div class="p-2 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-[#2563EB]"></span>
+                  <span class="font-medium text-[#0F1D38]">Figma.lnk</span>
+                </div>
+                <span class="text-slate-400 text-[11px]">快捷方式</span>
+              </div>
+              <div class="p-2 bg-slate-50 rounded-lg border border-slate-100 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  <span class="font-medium text-[#0F1D38]">排期表.xlsx</span>
+                </div>
+                <span class="text-slate-400 text-[11px]">4.2 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 桌面物理行为配置卡 -->
+          <div class="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3.5 text-xs">
+            <span class="font-bold text-[#0F1D38]">桌面物理行为</span>
+
+            <div class="grid grid-cols-2 gap-1 p-1 bg-white rounded-lg border border-slate-200">
+              <button onclick="updateDrawerMode('always')" id="btn-mode-always" class="py-1 px-2 rounded font-semibold bg-[#0F1D38] text-white shadow-xs">
+                常驻展开
+              </button>
+              <button onclick="updateDrawerMode('hover')" id="btn-mode-hover" class="py-1 px-2 rounded text-slate-600 hover:text-slate-900 font-medium">
+                悬停展开
+              </button>
+            </div>
+
+            <div class="space-y-2.5 pt-1">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-600">锁定位置 (禁止桌面误拖动)</span>
+                <input type="checkbox" checked class="rounded text-[#2563EB] focus:ring-0">
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-slate-600">靠近屏幕边缘自动磁吸</span>
+                <input type="checkbox" checked class="rounded text-[#2563EB] focus:ring-0">
+              </div>
+            </div>
+          </div>
+
+          <!-- 专属核心操作群 -->
+          <div class="space-y-2 pt-2 border-t border-slate-100">
+            <button onclick="triggerReturn('当前抽屉')" class="w-full py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-[#0F1D38] transition-colors shadow-xs">
+              归还全部内容至桌面原始位置
+            </button>
+            <div class="flex items-center gap-2">
+              <button onclick="triggerGather()" class="flex-1 py-1.5 rounded-lg text-xs text-slate-600 hover:text-[#0F1D38] bg-slate-50 hover:bg-slate-100 transition-colors">
+                重新抓取散落文件
+              </button>
+              <button onclick="triggerDissolve()" class="py-1.5 px-3 rounded-lg text-xs text-slate-400 hover:text-slate-800 transition-colors">
+                解除分组
+              </button>
+            </div>
+          </div>
+
+          <div class="text-[11px] text-slate-400 leading-relaxed">
+            🛡️ 退出栖格时，所有收纳的文件都会安全放回原有桌面坐标；绝无丢件隐患。
+          </div>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- 3. 主体区 B: 【工作台详情模式 (Studio Mode)】经典侧栏 + 中间详细列表 + 右侧 Inspector -->
+    <div id="main-view-studio" class="flex-1 flex overflow-hidden hidden">
+
+      <!-- [左侧导航 Sidebar] 宽 250px -->
+      <aside class="w-[250px] bg-[#FAFAFC] border-r border-slate-100 flex flex-col justify-between shrink-0 select-none">
+        <div class="p-3.5 flex flex-col h-full overflow-hidden">
+
+          <!-- 搜索 -->
+          <div class="relative mb-3">
+            <svg class="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" stroke-width="2"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65" stroke-width="2"></line>
+            </svg>
+            <input type="text" placeholder="搜索抽屉或文件..."
+                   class="w-full bg-white text-xs text-[#0F1D38] placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-slate-200/80 focus:border-[#2563EB] focus:outline-none transition-colors">
+          </div>
+
+          <!-- 抽屉列表 -->
+          <div class="flex-1 overflow-y-auto space-y-4 pr-0.5">
+            <div>
+              <div class="flex items-center justify-between px-2 mb-1.5">
+                <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">桌面整理抽屉</span>
+                <span class="text-[10px] text-slate-400 font-mono">2</span>
+              </div>
+              <div class="space-y-1">
+                <button onclick="selectStudioDrawer('drawer-1')" id="nav-studio-1" class="w-full text-left p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs flex items-center gap-2.5 transition-all">
+                  <div class="w-6 h-6 rounded-md bg-slate-100 text-[#0F1D38] flex items-center justify-center shrink-0">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" /></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-semibold text-[#0F1D38] truncate">常用工作台</span>
+                      <span class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">9 个项目 · 常驻展开</div>
+                  </div>
+                </button>
+
+                <button onclick="selectStudioDrawer('drawer-2')" id="nav-studio-2" class="w-full text-left p-2.5 rounded-xl border border-transparent hover-subtle flex items-center gap-2.5 transition-all">
+                  <div class="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-medium text-slate-700 truncate">临时便签与收纳</span>
+                      <span class="text-[10px] text-slate-500 font-mono bg-slate-100 px-1 rounded">有冲突</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">3 个项目 · 待解决</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between px-2 mb-1.5">
+                <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">文件夹映射抽屉</span>
+                <span class="text-[10px] text-slate-400 font-mono">2</span>
+              </div>
+              <div class="space-y-1">
+                <button onclick="selectStudioDrawer('drawer-3')" id="nav-studio-3" class="w-full text-left p-2.5 rounded-xl border border-transparent hover-subtle flex items-center gap-2.5 transition-all">
+                  <div class="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-medium text-slate-700 truncate">2026 设计资产</span>
+                      <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">24 个文件 · 悬停展开</div>
+                  </div>
+                </button>
+
+                <button onclick="selectStudioDrawer('drawer-4')" id="nav-studio-4" class="w-full text-left p-2.5 rounded-xl border border-transparent hover-subtle flex items-center gap-2.5 transition-all">
+                  <div class="w-6 h-6 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-medium text-slate-700 truncate">项目冷备份 (E:)</span>
+                      <span class="text-[10px] text-slate-500 font-mono bg-slate-100 px-1 rounded">离线</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">设备未插入 · 点击修复</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 侧栏底栏 -->
+          <div class="pt-2 border-t border-slate-100 space-y-0.5">
+            <button onclick="openPreferencesModal()" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover-subtle">
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-width="2" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>偏好设置</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- [中间工作区] 收纳条目详细清单 (真实系统 .ico) -->
+      <section class="flex-1 flex flex-col border-r border-slate-100 overflow-hidden bg-white">
+        <div class="px-7 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-base font-bold text-[#0F1D38]">常用工作台</span>
+              <span class="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">桌面整理抽屉</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">9 个项目 · 记录了桌面原始物理坐标</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="triggerLocate('常用工作台')" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-[#0F1D38] flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-[#2563EB]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M3 12h3m12 0h3M12 3v3m0 12v3"/></svg>
+              在桌面上定位
+            </button>
+            <button onclick="triggerReturn('常用工作台')" class="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50">
+              归还内容至桌面
+            </button>
+          </div>
+        </div>
+
+        <!-- 真实 .ico 详细文件条目 -->
+        <div class="flex-1 overflow-y-auto p-5 space-y-1.5">
+          <!-- 1. Figma.lnk 真实快捷方式 ico -->
+          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-[#FAFAFC] transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="relative w-8 h-8 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 38 57" fill="none">
+                  <path d="M19 28.5C19 23.2533 23.2533 19 28.5 19C33.7467 19 38 23.2533 38 28.5C38 33.7467 33.7467 38 28.5 38C23.2533 38 19 33.7467 19 28.5Z" fill="#1ABCFE"/>
+                  <path d="M0 47.5C0 42.2533 4.25329 38 9.5 38H19V47.5C19 52.7467 14.7467 57 9.5 57C4.25329 57 0 52.7467 0 47.5Z" fill="#0ACF83"/>
+                  <path d="M19 0V19H28.5C33.7467 19 38 14.7467 38 9.5C38 4.25329 33.7467 0 28.5 0H19Z" fill="#FF7262"/>
+                  <path d="M0 9.5C0 14.7467 4.25329 19 9.5 19H19V0H9.5C4.25329 0 0 4.25329 0 9.5Z" fill="#F24E1E"/>
+                  <path d="M0 28.5C0 33.7467 4.25329 38 9.5 38H19V19H9.5C4.25329 19 0 23.2533 0 28.5Z" fill="#A259FF"/>
+                </svg>
+                <span class="absolute -bottom-0.5 -left-0.5 w-3 h-3 bg-white border border-slate-300 rounded-[2px] flex items-center justify-center">
+                  <svg class="w-2 h-2 text-[#2563EB]" viewBox="0 0 24 24" fill="currentColor"><path d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </span>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-[#0F1D38]">Figma.lnk</div>
+                <div class="text-[11px] text-slate-400">原桌面坐标: (120, 340) · 快捷方式</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+              <button class="px-2 py-1 text-slate-600 hover:text-slate-900 rounded">打开</button>
+              <button class="px-2 py-1 text-slate-600 hover:text-[#2563EB] rounded">单项归还</button>
+            </div>
+          </div>
+
+          <!-- 2. Excel 真实表格 ico -->
+          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-[#FAFAFC] transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" viewBox="0 0 32 32" fill="none">
+                  <rect x="2" y="8" width="14" height="16" rx="2" fill="#107C41"/>
+                  <path d="M6 13L8.5 16L6 19H7.8L9.2 17.2L10.6 19H12.4L9.9 16L12.4 13H10.6L9.2 14.8L7.8 13H6Z" fill="white"/>
+                  <path d="M18 13H26V15H18V13ZM18 17H26V19H18V17Z" fill="#21A366"/>
+                </svg>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-[#0F1D38]">2026_Q4_产品需求排期表.xlsx</div>
+                <div class="text-[11px] text-slate-400">原桌面坐标: (120, 420) · 4.2 MB</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+              <button class="px-2 py-1 text-slate-600 hover:text-slate-900 rounded">打开</button>
+              <button class="px-2 py-1 text-slate-600 hover:text-[#2563EB] rounded">单项归还</button>
+            </div>
+          </div>
+
+          <!-- 3. 图片缩略真实 ico -->
+          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-[#FAFAFC] transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="relative w-8 h-8 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-center shrink-0 overflow-hidden">
+                <div class="w-full h-full bg-gradient-to-tr from-slate-200 to-blue-50 flex items-center justify-center">
+                  <svg class="w-4 h-4 text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </div>
+                <span class="absolute bottom-0 right-0 px-0.5 bg-[#0F1D38] text-[8px] font-mono text-white rounded-tl">PNG</span>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-[#0F1D38]">栖格_概念设计草图.png</div>
+                <div class="text-[11px] text-slate-400">原桌面坐标: (200, 340) · 1.8 MB</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+              <button class="px-2 py-1 text-slate-600 hover:text-slate-900 rounded">打开</button>
+              <button class="px-2 py-1 text-slate-600 hover:text-[#2563EB] rounded">单项归还</button>
+            </div>
+          </div>
+
+          <!-- 4. Fluent 文件夹 ico -->
+          <div class="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-[#FAFAFC] transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-white border border-slate-200/80 shadow-xs flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" viewBox="0 0 32 32" fill="none">
+                  <path d="M4 7C4 5.89543 4.89543 5 6 5H12.3431L15.4142 7.24264H26C27.1046 7.82843 28 8.723 28 9.82843V12H4V7Z" fill="#F0A500"/>
+                  <path d="M2 13C2 11.8954 2.89543 11 4 11H28V24C28 25.1046 27.1046 26 26 26H4C2.89543 26 2 25.1046 2 24V13Z" fill="#FFC83B"/>
+                </svg>
+              </div>
+              <div>
+                <div class="text-xs font-medium text-[#0F1D38]">待整理临时素材/</div>
+                <div class="text-[11px] text-slate-400">原桌面坐标: (200, 420) · 18 项</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+              <button class="px-2 py-1 text-slate-600 hover:text-slate-900 rounded">打开</button>
+              <button class="px-2 py-1 text-slate-600 hover:text-[#2563EB] rounded">单项归还</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-2.5 bg-[#FAFAFC] border-t border-slate-100 flex items-center justify-between text-xs">
+          <span class="text-slate-400 text-[11px]">坐标记忆就绪</span>
+          <button onclick="triggerGather()" class="text-slate-600 hover:text-[#0F1D38] font-medium">重新收纳散落文件</button>
+        </div>
+      </section>
+
+      <!-- [右侧属性检查器 Inspector] 宽 320px -->
+      <aside class="w-[320px] bg-[#FAFAFC] p-5 space-y-4 shrink-0 text-xs select-none">
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs space-y-3">
+          <div class="flex items-center justify-between font-bold text-[#0F1D38]">
+            <span>展开与收起行为</span>
+            <span class="text-[11px] text-slate-400 font-normal">桌面交互</span>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-lg">
+            <button class="py-1 px-2 text-xs font-semibold rounded-md bg-white text-[#0F1D38] shadow-xs">常驻展开</button>
+            <button class="py-1 px-2 text-xs font-medium rounded-md text-slate-500">悬停展开</button>
+          </div>
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-slate-700 font-medium">锁定桌面位置</span>
+            <input type="checkbox" checked class="rounded text-[#2563EB] focus:ring-0">
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs space-y-3">
+          <span class="font-bold text-[#0F1D38]">屏幕吸附与尺寸</span>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-600">靠近屏幕边缘自动磁吸</span>
+              <input type="checkbox" checked class="rounded text-[#2563EB] focus:ring-0">
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-slate-600">中心引导线对齐</span>
+              <input type="checkbox" checked class="rounded text-[#2563EB] focus:ring-0">
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs space-y-2">
+          <span class="font-bold text-[#0F1D38]">目标显示器</span>
+          <select class="w-full text-xs bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-slate-700 outline-none">
+            <option>显示器 1：Dell U2723QE (2560×1440 · 主屏)</option>
+            <option>显示器 2：拓展副屏</option>
+          </select>
+        </div>
+      </aside>
+
+    </div>
+
+    <!-- 4. 共享统一模态弹窗系统 (新建、安全归还、解除分组) -->
+
+    <!-- 新建抽屉向导弹窗 -->
+    <div id="modal-create" class="fixed inset-0 bg-slate-900/25 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+      <div class="w-full max-w-[500px] bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 class="text-sm font-bold text-[#0F1D38]">新建桌面抽屉</h3>
+          <button onclick="closeModal('modal-create')" class="p-1 text-slate-400 hover:text-slate-800">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="p-6 space-y-3.5">
+          <div onclick="selectCreateType('desktop')" id="create-type-desktop" class="p-4 rounded-xl border-2 border-[#0F1D38] bg-slate-50/50 cursor-pointer transition-all flex items-start gap-3">
+            <span class="w-4 h-4 rounded-full border-2 border-[#0F1D38] flex items-center justify-center shrink-0 mt-0.5" id="radio-desktop">
+              <span class="w-2 h-2 rounded-full bg-[#0F1D38]"></span>
+            </span>
+            <div>
+              <div class="text-xs font-bold text-[#0F1D38]">桌面整理抽屉 (收纳已有桌面图标)</div>
+              <div class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                收纳桌面散落快捷方式与文件，退出或解除时按原始物理坐标原位归还，绝不删文件。
+              </div>
+            </div>
+          </div>
+
+          <div onclick="selectCreateType('folder')" id="create-type-folder" class="p-4 rounded-xl border-2 border-transparent bg-slate-50 hover:border-slate-200 cursor-pointer transition-all flex items-start gap-3">
+            <span class="w-4 h-4 rounded-full border-2 border-slate-300 flex items-center justify-center shrink-0 mt-0.5" id="radio-folder">
+              <span class="w-2 h-2 rounded-full bg-transparent"></span>
+            </span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">文件夹映射抽屉 (连接本地真实文件夹)</div>
+              <div class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                将已有本地目录（如工作目录、下载库）或新目录直接展示为桌面视窗，解除映射不删磁盘文件。
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-700 mb-1">抽屉名称</label>
+              <input type="text" value="新建桌面抽屉" class="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:border-[#2563EB] outline-none">
+            </div>
+            <div id="create-folder-path-section" class="hidden">
+              <label class="block text-xs font-medium text-slate-700 mb-1">物理目录路径</label>
+              <div class="flex gap-2">
+                <input type="text" placeholder="例如 D:\Workspaces\ActiveProjects" class="flex-1 text-xs px-3 py-2 border border-slate-200 rounded-lg font-mono outline-none">
+                <button class="px-3 py-2 bg-slate-100 text-xs font-medium rounded-lg hover:bg-slate-200">浏览...</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button onclick="closeModal('modal-create')" class="px-3.5 py-1.5 text-xs text-slate-500 hover:text-slate-800">取消</button>
+          <button onclick="confirmCreate()" class="px-4 py-1.5 text-xs font-medium bg-[#0F1D38] text-white hover:bg-[#1E2E4F] rounded-lg">创建并在桌面放置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 偏好设置弹窗 -->
+    <div id="modal-preferences" class="fixed inset-0 bg-slate-900/25 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+      <div class="w-full max-w-[460px] bg-white rounded-2xl shadow-xl border border-slate-200 p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <h3 class="text-sm font-bold text-[#0F1D38]">全局偏好设置</h3>
+          <button onclick="closeModal('modal-preferences')" class="text-slate-400 hover:text-slate-800">✕</button>
+        </div>
+        <div class="space-y-3 text-xs">
+          <div class="flex items-center justify-between">
+            <span class="text-slate-700">双击桌面空白处隐藏/呼出全部抽屉</span>
+            <input type="checkbox" checked class="rounded text-[#2563EB]">
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-700">开机自动启动栖格守护进程</span>
+            <input type="checkbox" checked class="rounded text-[#2563EB]">
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-700">全屏游戏或演示时自动隐藏边缘抽屉</span>
+            <input type="checkbox" checked class="rounded text-[#2563EB]">
+          </div>
+        </div>
+        <div class="pt-2 border-t border-slate-100 flex justify-end">
+          <button onclick="closeModal('modal-preferences')" class="px-3.5 py-1.5 text-xs font-medium bg-[#0F1D38] text-white rounded-lg">完成</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 关闭行为确认弹窗 -->
+    <div id="modal-close" class="fixed inset-0 bg-slate-900/25 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+      <div class="w-full max-w-[440px] bg-white rounded-2xl shadow-xl border border-slate-200 p-6 space-y-4">
+        <h3 class="text-sm font-bold text-[#0F1D38]">关闭管理面板</h3>
+        <div class="space-y-2 text-xs">
+          <div onclick="executeCloseChoice('tray')" class="p-3 rounded-xl border border-[#0F1D38] bg-slate-50 cursor-pointer flex items-center justify-between">
+            <div>
+              <div class="font-semibold text-[#0F1D38]">关闭面板，保持桌面抽屉正常运行</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">抽屉继续在桌面生效，程序最小化至托盘</div>
+            </div>
+            <span class="text-[#2563EB]">✓</span>
+          </div>
+          <div onclick="executeCloseChoice('quit')" class="p-3 rounded-xl border border-slate-200 hover:border-slate-300 cursor-pointer flex items-center justify-between">
+            <div>
+              <div class="font-medium text-slate-700">完全退出栖格程序</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">退出常驻守护，可选择临时归还桌面图标</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center justify-end pt-2 border-t border-slate-100">
+          <button onclick="closeModal('modal-close')" class="px-3 py-1.5 text-xs text-slate-500">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 浮动状态 Toast -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#0F1D38] text-white text-xs px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 opacity-0 pointer-events-none transition-all duration-200 z-50">
+      <span class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>
+      <span id="toast-message">操作完成</span>
+    </div>
+
+  </div>
+
+  <script>
+    // 核心切换：空间沙盘 (Canvas) vs 工作台详情 (Studio)
+    function switchMainView(mode) {
+      const viewCanvas = document.getElementById('main-view-canvas');
+      const viewStudio = document.getElementById('main-view-studio');
+      const btnCanvas = document.getElementById('btn-mode-canvas');
+      const btnStudio = document.getElementById('btn-mode-studio');
+
+      if (mode === 'canvas') {
+        viewCanvas.classList.remove('hidden');
+        viewStudio.classList.add('hidden');
+        btnCanvas.className = 'px-3 py-1 rounded-lg text-xs font-semibold bg-white text-[#0F1D38] shadow-xs flex items-center gap-1.5 transition-all';
+        btnStudio.className = 'px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-900 flex items-center gap-1.5 transition-all';
+        showToast('已切换至「桌面空间沙盘」模式');
+      } else {
+        viewStudio.classList.remove('hidden');
+        viewCanvas.classList.add('hidden');
+        btnStudio.className = 'px-3 py-1 rounded-lg text-xs font-semibold bg-white text-[#0F1D38] shadow-xs flex items-center gap-1.5 transition-all';
+        btnCanvas.className = 'px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-900 flex items-center gap-1.5 transition-all';
+        showToast('已切换至「工作台详情列表」模式');
+      }
+    }
+
+    // Bento 沙盘抽屉选择
+    function selectBentoDrawer(id) {
+      document.querySelectorAll('.bento-card').forEach(c => {
+        c.classList.remove('bento-card-active');
+      });
+      const activeCard = document.getElementById('bento-' + id);
+      if (activeCard) activeCard.classList.add('bento-card-active');
+
+      const titleMap = {
+        'drawer-1': { title: '常用工作台', badge: '桌面整理', subtitle: '主屏 · 右上贴边 (坐标记忆就绪)' },
+        'drawer-3': { title: '2026 设计资产', badge: '文件夹映射', subtitle: '主屏 · 左侧边缘 4px 手柄 (D:\\DesignVault)' },
+        'drawer-2': { title: '临时便签与收纳', badge: '桌面整理', subtitle: '主屏 · 居中悬浮 (1 项归还冲突待解决)' },
+        'drawer-4': { title: '项目冷备份 (E:)', badge: '文件夹映射', subtitle: '主屏 · 移动硬盘离线 (待重新连接)' }
+      };
+      const info = titleMap[id] || titleMap['drawer-1'];
+      document.getElementById('inspector-title').value = info.title;
+      document.getElementById('inspector-badge').innerText = info.badge;
+      document.getElementById('inspector-subtitle').innerText = info.subtitle;
+    }
+
+    // Studio 侧栏抽屉选择
+    function selectStudioDrawer(id) {
+      [1, 2, 3, 4].forEach(i => {
+        const btn = document.getElementById('nav-studio-' + i);
+        if (btn) {
+          btn.className = 'w-full text-left p-2.5 rounded-xl border border-transparent hover-subtle flex items-center gap-2.5 transition-all';
+        }
+      });
+      const cur = document.getElementById('nav-studio-' + id.replace('drawer-', ''));
+      if (cur) {
+        cur.className = 'w-full text-left p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs flex items-center gap-2.5 transition-all';
+      }
+      showToast('已载入对应抽屉详情');
+    }
+
+    // 透视岛网格 vs 列表
+    function setInspectorView(view) {
+      const grid = document.getElementById('inspector-grid-view');
+      const list = document.getElementById('inspector-list-view');
+      const btnGrid = document.getElementById('btn-view-grid');
+      const btnList = document.getElementById('btn-view-list');
+      if (view === 'grid') {
+        grid.classList.remove('hidden');
+        list.classList.add('hidden');
+        btnGrid.className = 'p-1 rounded bg-white text-[#0F1D38] shadow-xs';
+        btnList.className = 'p-1 rounded text-slate-500 hover:text-slate-900';
+      } else {
+        list.classList.remove('hidden');
+        grid.classList.add('hidden');
+        btnList.className = 'p-1 rounded bg-white text-[#0F1D38] shadow-xs';
+        btnGrid.className = 'p-1 rounded text-slate-500 hover:text-slate-900';
+      }
+    }
+
+    function updateDrawerMode(mode) {
+      const bAlways = document.getElementById('btn-mode-always');
+      const bHover = document.getElementById('btn-mode-hover');
+      if (mode === 'always') {
+        bAlways.className = 'py-1 px-2 rounded font-semibold bg-[#0F1D38] text-white shadow-xs';
+        bHover.className = 'py-1 px-2 rounded text-slate-600 hover:text-slate-900 font-medium';
+        showToast('已设为常驻展开');
+      } else {
+        bHover.className = 'py-1 px-2 rounded font-semibold bg-[#0F1D38] text-white shadow-xs';
+        bAlways.className = 'py-1 px-2 rounded text-slate-600 hover:text-slate-900 font-medium';
+        showToast('已设为悬停平滑展开');
+      }
+    }
+
+    // 模态弹窗控制
+    function openCreateModal() { document.getElementById('modal-create').classList.remove('hidden'); }
+    function openPreferencesModal() { document.getElementById('modal-preferences').classList.remove('hidden'); }
+    function openCloseModal() { document.getElementById('modal-close').classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function selectCreateType(type) {
+      const d = document.getElementById('create-type-desktop');
+      const f = document.getElementById('create-type-folder');
+      const rD = document.getElementById('radio-desktop').firstElementChild;
+      const rF = document.getElementById('radio-folder').firstElementChild;
+      const p = document.getElementById('create-folder-path-section');
+      if (type === 'desktop') {
+        d.className = 'p-4 rounded-xl border-2 border-[#0F1D38] bg-slate-50/50 cursor-pointer transition-all flex items-start gap-3';
+        f.className = 'p-4 rounded-xl border-2 border-transparent bg-slate-50 hover:border-slate-200 cursor-pointer transition-all flex items-start gap-3';
+        rD.className = 'w-2 h-2 rounded-full bg-[#0F1D38]';
+        rF.className = 'w-2 h-2 rounded-full bg-transparent';
+        p.classList.add('hidden');
+      } else {
+        f.className = 'p-4 rounded-xl border-2 border-[#0F1D38] bg-slate-50/50 cursor-pointer transition-all flex items-start gap-3';
+        d.className = 'p-4 rounded-xl border-2 border-transparent bg-slate-50 hover:border-slate-200 cursor-pointer transition-all flex items-start gap-3';
+        rF.className = 'w-2 h-2 rounded-full bg-[#0F1D38]';
+        rD.className = 'w-2 h-2 rounded-full bg-transparent';
+        p.classList.remove('hidden');
+      }
+    }
+
+    function confirmCreate() { closeModal('modal-create'); showToast('抽屉已创建并在桌面就绪'); }
+    function triggerLocate(name) { showToast(`已在真实桌面上闪烁定位「${name}」`); }
+    function triggerReturn(name) { showToast(`已将「${name}」内的全部项目放回桌面原始坐标`); }
+    function triggerGather() { showToast('已自动抓取桌面散落的关联文件'); }
+    function triggerDissolve() { showToast('已解除分组，所有文件已安全归还桌面'); }
+    function executeCloseChoice(t) { closeModal('modal-close'); showToast(t === 'tray' ? '面板已最小化至托盘，桌面抽屉持续生效' : '正在退出后台程序...'); }
+
+    let tTimer;
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toast-message').innerText = msg;
+      t.classList.remove('opacity-0', 'pointer-events-none');
+      clearTimeout(tTimer);
+      tTimer = setTimeout(() => t.classList.add('opacity-0', 'pointer-events-none'), 2400);
+    }
+  </script>
+</body>
+</html>

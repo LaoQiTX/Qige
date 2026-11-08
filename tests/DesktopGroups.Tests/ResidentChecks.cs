@@ -130,9 +130,13 @@ internal static class ResidentChecks
         Check(File.Exists(original) && !File.Exists(stored), "recovery test restores its project sample on exit");
         Check(errors.Count == 0, "native recovery does not report unexpected callback failures");
 
-        using (var tray = new ResidentTray(relayRoot, _ => { }, () => false))
+        var openReceived = false;
+        using (var tray = new ResidentTray(relayRoot, action => openReceived |= action == TrayCommand.Show, () => false))
         {
             Check(tray.Available, "native tray registration succeeds on the current desktop");
+            PostMessage(tray.Handle, 0x8001, 0, 0x400);
+            await Task.Delay(100);
+            Check(openReceived, "selecting the native tray icon dispatches the show-manager command");
             var eventReceived = false;
             tray.EnvironmentChanged += reason => eventReceived |= reason == "Explorer 重建";
             var previous = tray.RegistrationCount;

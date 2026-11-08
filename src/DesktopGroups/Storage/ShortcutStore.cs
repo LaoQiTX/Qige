@@ -26,6 +26,9 @@ internal sealed class ShortcutProfile
     public int X { get; set; } = 520;
     public int Y { get; set; } = 180;
     public bool Folded { get; set; }
+    public double Width { get; set; } = 420;
+    public double Height { get; set; } = 352;
+    public bool Locked { get; set; }
     public List<StoredShortcut> Entries { get; set; } = [];
     public List<StoredShortcut> Ungrouped { get; set; } = [];
 }
@@ -62,11 +65,11 @@ internal sealed class ShortcutStore
     public string StoredPath(StoredShortcut entry) => storage.Resolve(entry.StoredRelative);
     public bool CanAccept(IReadOnlyList<string> paths)
     {
-        if (paths.Count is 0 or > 12) return false;
+        if (paths.Count == 0) return false;
         try
         {
             foreach (var path in paths) { ValidateOriginal(path); if (!File.Exists(path)) return false; }
-            return Profile.Entries.Select(entry => entry.OriginalPath).Concat(paths).Distinct(StringComparer.OrdinalIgnoreCase).Count() <= 12;
+            return true;
         }
         catch (IOException) { return false; }
         catch (ArgumentException) { return false; }
@@ -77,8 +80,6 @@ internal sealed class ShortcutStore
     {
         path = Path.GetFullPath(path);
         ValidateOriginal(path);
-        if (Profile.Entries.Count >= 12 && !Profile.Entries.Any(item => item.OriginalPath.Equals(path, StringComparison.OrdinalIgnoreCase)))
-            throw new IOException("小原型最多收纳 12 个快捷方式。");
         var info = ShortcutInfo.Read(path);
         var entry = Profile.Entries.SingleOrDefault(item => item.OriginalPath.Equals(path, StringComparison.OrdinalIgnoreCase));
         if (entry == null)

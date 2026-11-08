@@ -6,9 +6,11 @@
 
 根目录 `build.ps1` / `publish.ps1` 是稳定入口，实现位于 `scripts`。统一环境设置在 `scripts/ProjectEnvironment.ps1`，执行结束恢复调用进程环境。缓存、TEMP/TMP、NuGet、MSBuild 日志定向到 `.build`，标准 bin/obj 留在各项目目录并忽略提交。
 
-- `-Task Test`：路径、旧数据迁移和收纳恢复；每次创建独立的 `.build/test-results/runs/<id>`。
+- `-Task Test`：路径、旧数据迁移、收纳恢复、多抽屉和布局计算；每次创建独立的 `.build/test-results/runs/<id>`。
 - `-Task SelfTest`：数据目录与迁移；包括活动入口、NTFS 下载来源流、配置备份、幂等、中断和冲突。
 - `-Task StorageTest`：收纳、同步、拖回、冲突和中断恢复，不移动真实桌面文件。
+- `-Task LayoutTest`：多抽屉所有权、旧分组接续、安全移除和中断恢复，边缘／中心吸附、滞回、DPI、缩放锚点及屏幕回收。
+- `-Task ManagerTest`：打开隔离 WPF 管理面板，检查抽屉创建／移除、18 项滚动与命中、列数重排、折叠和锁定，并导出面板及抽屉 PNG 预览；不移动真实桌面文件。
 - `-Task ResidentTest`：需交互桌面，使用内存启动项模拟，不更改实际开机启动。
 - `-Task StorageRenderTest`：需交互桌面，创建样例分区，检查动画、OLE 和 120 次移动。
 - `-Task IconTest`：隔离样例；本机存在 Axolotl 快捷方式时可选只读验证。

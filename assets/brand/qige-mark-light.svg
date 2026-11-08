@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="96 96 320 320" fill="none">
-  <title>栖格 Qige 单色标志</title>
-  <path d="M 360 230 L 360 176 C 360 153.9086 342.0914 136 320 136 L 176 136 C 153.9086 136 136 153.9086 136 176 L 136 320 C 136 342.0914 153.9086 360 176 360 L 230 360" stroke="#E4EFE5" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="282" y="282" width="96" height="96" rx="21" fill="#E4EFE5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- 栖格 Qige - 深底/黑版 Icon (方案一: 纯白霜框 + 透光天青小方块) -->
+  <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+        stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="54" y="58" width="28" height="28" rx="8" fill="#38BDF8"/>
 </svg>

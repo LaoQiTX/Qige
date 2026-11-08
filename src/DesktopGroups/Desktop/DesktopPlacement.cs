@@ -9,7 +9,7 @@ internal readonly record struct ScreenArea(int X, int Y, int Width, int Height)
 }
 
 internal sealed record DesktopMonitor(string Device, ScreenArea Bounds, ScreenArea Work, uint Dpi);
-internal sealed record PanelPlacement(int X, int Y, uint Dpi);
+internal sealed record PanelPlacement(int X, int Y, uint Dpi, double Width = 420, double Height = 352);
 
 internal static class DesktopPlacement
 {
@@ -32,20 +32,26 @@ internal static class DesktopPlacement
     // Use one actual monitor work area, not the bounding box of all monitors:
     // the latter contains gaps where a panel could become unreachable.
     public static PanelPlacement Resolve(int x, int y, IReadOnlyList<DesktopMonitor> monitors)
+        => Resolve(x, y, 420, 352, monitors);
+
+    public static PanelPlacement Resolve(int x, int y, double widthDip, double heightDip, IReadOnlyList<DesktopMonitor> monitors, bool folded = false)
     {
         if (monitors.Count == 0) throw new InvalidOperationException("正在等待可用显示器。");
-        var target = monitors.OrderByDescending(m => Intersection(x, y, m))
+        var target = monitors.OrderByDescending(m => Intersection(x, y, widthDip, heightDip, m))
             .ThenBy(m => Distance(x, y, m.Work)).First();
-        var width = (int)Math.Round(420 * target.Dpi / 96d);
-        var height = (int)Math.Round(352 * target.Dpi / 96d);
+        var scale = target.Dpi / 96d;
+        widthDip = Math.Min(widthDip, target.Work.Width / scale);
+        heightDip = Math.Min(heightDip, target.Work.Height / scale);
+        var width = (int)Math.Round(widthDip * scale);
+        var height = (int)Math.Round((folded ? Math.Min(46, heightDip) : heightDip) * scale);
         return new(Math.Clamp(x, target.Work.X, Math.Max(target.Work.X, target.Work.Right - width)),
-            Math.Clamp(y, target.Work.Y, Math.Max(target.Work.Y, target.Work.Bottom - height)), target.Dpi);
+            Math.Clamp(y, target.Work.Y, Math.Max(target.Work.Y, target.Work.Bottom - height)), target.Dpi, widthDip, heightDip);
     }
 
-    private static long Intersection(int x, int y, DesktopMonitor monitor)
+    private static long Intersection(int x, int y, double widthDip, double heightDip, DesktopMonitor monitor)
     {
-        var width = (int)Math.Round(420 * monitor.Dpi / 96d);
-        var height = (int)Math.Round(352 * monitor.Dpi / 96d);
+        var width = (int)Math.Round(widthDip * monitor.Dpi / 96d);
+        var height = (int)Math.Round(heightDip * monitor.Dpi / 96d);
         return (long)Math.Max(0, Math.Min(x + width, monitor.Work.Right) - Math.Max(x, monitor.Work.X)) *
             Math.Max(0, Math.Min(y + height, monitor.Work.Bottom) - Math.Max(y, monitor.Work.Y));
     }

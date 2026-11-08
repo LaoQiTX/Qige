@@ -46,7 +46,7 @@ internal static class Program
         catch (IOException)
         {
             if (!args.Contains("--demo") && InstanceRelay.ShowExistingAsync(storage.Root).GetAwaiter().GetResult()) return null;
-            throw new IOException("栖格已在运行或数据目录被占用，请从托盘打开控制窗口。");
+            throw new IOException("栖格已在运行或数据目录被占用，请从托盘打开管理面板。");
         }
     }
 }

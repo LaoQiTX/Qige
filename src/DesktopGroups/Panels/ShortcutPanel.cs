@@ -41,14 +41,40 @@ internal sealed class ShortcutPanel : IDisposable
     private bool dragging, tracking, folded, hoveringOpen;
     private NativeDesktop.Point dragStart;
     private int startX, startY, selected = -1, hovered = -1;
+    private string title = "常用";
+    private double logicalWidth = 420, logicalHeight = 352, scrollOffset;
+    private bool layoutLocked, scrolling, highlighted;
+    private int resizeEdges;
+    private LayoutRect gestureStart;
+    private long lastResize;
+    public Func<LayoutRect, int, LayoutRect>? TransformLayout { get; set; }
+    public event Action? LayoutCommitted;
+    public event Action? InteractionEnded;
+    public event Action? ManageRequested;
+    public bool LayoutLocked => layoutLocked;
+    public double LogicalWidth => logicalWidth;
+    public double LogicalHeight => logicalHeight;
+    public double ScrollOffset => scrollOffset;
+    public int Columns => Math.Max(1, (int)((logicalWidth - 28) / 98));
+    private double CellWidth => (logicalWidth - 28) / Columns;
+    private double MaxScroll => Math.Max(0, Math.Ceiling(items.Count / (double)Columns) * 94 - (logicalHeight - 63));
+    internal LayoutRect ScreenBounds
+    {
+        get
+        {
+            var point = new NativeDesktop.Point { X = X, Y = Y };
+            if (host != 0) ClientToScreen(host, ref point);
+            return new(point.X, point.Y, Width, Height);
+        }
+    }
     private double scale = 1;
     private BitmapSource? lastBitmap;
     public nint Handle { get; private set; }
     public int X { get; private set; }
     public int Y { get; private set; }
-    public int Width => (int)Math.Round(420 * scale);
+    public int Width => (int)Math.Round(logicalWidth * scale);
     public int Height => (int)Math.Round(displayHeight * scale);
-    private int FullHeight => (int)Math.Round(352 * scale);
+    private int FullHeight => (int)Math.Round(logicalHeight * scale);
     public int SurfaceBuilds { get; private set; }
     public int MoveCount { get; private set; }
     internal bool IsFolded => folded;
@@ -58,7 +84,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal bool IsAnimating => animationTimer.IsEnabled;
     internal int AnimationFrames { get; private set; }
     internal bool IsAttached => Handle != 0 && IsWindow(Handle) && IsWindow(host) && NativeDesktop.GetParent(Handle) == host;
-    internal bool IsInteracting => dragging || pressedItem >= 0 || fileDrag;
+    internal bool IsInteracting => dragging || resizeEdges != 0 || scrolling || pressedItem >= 0 || fileDrag;
     internal int AttachmentCount { get; private set; }
     public event Action<bool>? FoldedChanged;
     internal IPanelDropTarget DropTarget => dropTarget ?? throw new InvalidOperationException("拖放尚未注册。");
@@ -68,7 +94,7 @@ internal sealed class ShortcutPanel : IDisposable
         Func<IReadOnlyList<string>, bool>? canAccept = null, Action<string>? returnToDesktop = null, Func<nint>? findHost = null)
     {
         this.report = report; this.moved = moved; this.dropped = dropped;
-        this.canAccept = canAccept ?? (paths => paths.Count is > 0 and <= 12 && paths.All(path => File.Exists(path) && ShortcutInfo.IsShortcut(path)));
+        this.canAccept = canAccept ?? (paths => paths.Count > 0 && paths.All(path => File.Exists(path) && ShortcutInfo.IsShortcut(path)));
         this.returnToDesktop = returnToDesktop;
         this.findHost = findHost ?? DesktopAttachment.FindIconHost;
         animationTimer.Tick += (_, _) => AdvanceAnimation();
@@ -95,22 +121,30 @@ internal sealed class ShortcutPanel : IDisposable
         host = nextHost;
         var point = screenPosition ?? new NativeDesktop.Point { X = X, Y = Y };
         if (screenPosition == null) ClientToScreen(host, ref point);
-        var placement = DesktopPlacement.Resolve(point.X, point.Y, DesktopPlacement.Capture());
+        var placement = DesktopPlacement.Resolve(point.X, point.Y, logicalWidth, logicalHeight, DesktopPlacement.Capture(), folded: !IsExpanded);
         screenPosition = new NativeDesktop.Point { X = placement.X, Y = placement.Y };
         point = screenPosition.Value;
         DesktopAttachment.ScreenToClient(host, ref point);
         var scaleChanged = Math.Abs(scale - placement.Dpi / 96d) > .001;
+        var sizeChanged = Math.Abs(logicalWidth - placement.Width) > .001 || Math.Abs(logicalHeight - placement.Height) > .001;
         var movedPosition = X != point.X || Y != point.Y;
         X = point.X; Y = point.Y; scale = placement.Dpi / 96d;
+        if (sizeChanged)
+        {
+            logicalWidth = placement.Width; logicalHeight = placement.Height;
+            scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
+            animationTimer.Stop();
+            displayHeight = animationFrom = animationTo = IsExpanded ? logicalHeight : 46;
+        }
         if (!recreate)
         {
-            if (scaleChanged) Render();
+            if (scaleChanged || sizeChanged) Render();
             DesktopAttachment.Place(Handle, X, Y, Width, Height);
-            if (movedPosition) moved(X, Y);
+            if (movedPosition || sizeChanged || scaleChanged) moved(X, Y);
             return false;
         }
         Register();
-        Handle = CreateWindowEx(0x08080080, ClassName, "桌面分区 · 常用", 0x44000000, X, Y, Width, Height, host, 0, GetModuleHandle(null), 0);
+        Handle = CreateWindowEx(0x08080080, ClassName, "桌面分区 · " + title, 0x44000000, X, Y, Width, Height, host, 0, GetModuleHandle(null), 0);
         if (Handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
         Instances.Add(Handle, this);
         try
@@ -122,7 +156,7 @@ internal sealed class ShortcutPanel : IDisposable
             Marshal.ThrowExceptionForHR(RegisterDragDrop(Handle, dropTarget));
             dropRegistered = true;
             AttachmentCount++;
-            if (movedPosition) moved(X, Y);
+            if (movedPosition || sizeChanged || scaleChanged) moved(X, Y);
             return true;
         }
         catch { ReleaseSurface(); throw; }
@@ -131,8 +165,39 @@ internal sealed class ShortcutPanel : IDisposable
     internal void RestoreFolded(bool value)
     {
         folded = value; hoveringOpen = false;
-        displayHeight = animationFrom = animationTo = value ? 46 : 352;
+        displayHeight = animationFrom = animationTo = value ? 46 : logicalHeight;
         animationTimer.Stop();
+        if (IsAttached) Render();
+    }
+
+    public void Configure(string name, double width, double height, bool locked)
+    {
+        title = name; layoutLocked = locked;
+        logicalWidth = Math.Clamp(width, 244, 1400); logicalHeight = Math.Clamp(height, 160, 1100);
+        scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
+        animationTimer.Stop();
+        displayHeight = animationFrom = animationTo = IsExpanded ? logicalHeight : 46;
+        if (IsAttached) Render();
+    }
+
+    public void ShowScreen(int x, int y)
+    {
+        screenPosition = new NativeDesktop.Point { X = x, Y = y };
+        Show(x, y);
+    }
+
+    public void ApplyScreenLayout(int x, int y, double width, double height)
+    {
+        Configure(title, width, height, layoutLocked);
+        ShowScreen(x, y);
+        LayoutCommitted?.Invoke();
+    }
+
+    public void ScrollBy(double amount)
+    {
+        var next = Math.Clamp(scrollOffset + amount, 0, MaxScroll);
+        if (Math.Abs(next - scrollOffset) < .1) return;
+        scrollOffset = next; hovered = -1;
         if (IsAttached) Render();
     }
 
@@ -140,6 +205,7 @@ internal sealed class ShortcutPanel : IDisposable
     {
         items = entries.Select(entry => new PanelItem(entry.Name, entry.Path, ShortcutInfo.LoadIcon(entry.Path, entry.OriginalPath))).ToList();
         selected = -1; hovered = -1;
+        scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
         if (IsAttached) Render();
     }
 
@@ -151,6 +217,15 @@ internal sealed class ShortcutPanel : IDisposable
         ClientToScreen(host, ref point); screenPosition = point;
     }
 
+    public async void Highlight()
+    {
+        if (!IsAttached) return;
+        highlighted = true; Render();
+        await Task.Delay(650);
+        highlighted = false;
+        if (!disposed && IsAttached) Render();
+    }
+
     public void Render()
     {
         if (!IsAttached) return;
@@ -158,38 +233,52 @@ internal sealed class ShortcutPanel : IDisposable
         using (var drawing = visual.RenderOpen())
         {
             drawing.PushTransform(new ScaleTransform(scale, scale));
-            const double height = 352;
-            drawing.DrawRoundedRectangle(Solid(225, 31, 34, 40), new Pen(Solid(40, 255, 255, 255), 1), new Rect(.5, .5, 419, height - 1), 12, 12);
-            Text(drawing, "常用", 19, 12, 15, Colors.White, 240, 24, FontWeights.SemiBold);
-            Text(drawing, items.Count == 0 ? "" : items.Count.ToString(), 65, 15, 11, Color.FromRgb(164, 171, 181), 80, 20);
-            Text(drawing, folded ? "+" : "−", 384, 10, 19, Color.FromRgb(183, 191, 203), 20, 25);
-            if (height > 46)
+            var height = logicalHeight;
+            drawing.DrawRoundedRectangle(AppPalette.Translucent(225, AppPalette.Sidebar), new Pen(AppPalette.Translucent(40, AppPalette.Text), 1), new Rect(.5, .5, logicalWidth - 1, height - 1), 12, 12);
+            Text(drawing, title, 19, 12, 15, AppPalette.Text.Color, Math.Max(60, logicalWidth - 150), 24, FontWeights.SemiBold);
+            var countX = Math.Min(logicalWidth - 124, 24 + title.Length * 15);
+            Text(drawing, items.Count == 0 ? "" : items.Count.ToString(), countX, 15, 11, AppPalette.Muted.Color, 42, 20);
+            Text(drawing, "···", logicalWidth - 74, 9, 18, AppPalette.Secondary.Color, 28, 25);
+            Text(drawing, folded ? "+" : "−", logicalWidth - 36, 10, 19, AppPalette.Secondary.Color, 20, 25);
+            drawing.DrawLine(new Pen(AppPalette.Translucent(20, AppPalette.Text), 1), new Point(16, 45), new Point(logicalWidth - 16, 45));
+            drawing.PushClip(new RectangleGeometry(new Rect(10, 49, logicalWidth - 20, height - 57)));
+            if (items.Count == 0)
             {
-                drawing.DrawLine(new Pen(Solid(20, 255, 255, 255), 1), new Point(16, 45), new Point(404, 45));
-                if (items.Count == 0)
-                {
-                    Text(drawing, "把常用入口放在这里", 26, 132, 17, Color.FromRgb(224, 228, 234), 368, 28, FontWeights.SemiBold);
-                    Text(drawing, "选择桌面快捷方式，再点击“收纳选中”", 26, 169, 12, Color.FromRgb(155, 165, 180), 368, 40);
-                }
-                for (var index = 0; index < items.Count; index++)
-                {
-                    var left = 16 + index % 4 * 98;
-                    var top = 57 + index / 4 * 94;
-                    if (index == selected) drawing.DrawRoundedRectangle(Solid(44, 157, 187, 219), new Pen(Solid(95, 174, 200, 228), 1), new Rect(left, top, 94, 88), 7, 7);
-                    else if (index == hovered) drawing.DrawRoundedRectangle(Solid(23, 255, 255, 255), new Pen(Solid(38, 255, 255, 255), 1), new Rect(left, top, 94, 88), 7, 7);
-                    if (items[index].Icon is { } icon) drawing.DrawImage(icon, new Rect(left + 27, top + 7, 40, 40));
-                    else drawing.DrawRoundedRectangle(Solid(255, 119, 140, 166), null, new Rect(left + 31, top + 11, 32, 32), 6, 6);
-                    Text(drawing, items[index].Name, left + 4, top + 53, 11, Color.FromRgb(234, 237, 242), 86, 31, alignment: TextAlignment.Center);
-                }
+                Text(drawing, "把常用入口放在这里", 24, 88, 16, AppPalette.Text.Color, logicalWidth - 48, 46, FontWeights.SemiBold);
+                Text(drawing, "拖入桌面快捷方式，或从管理面板添加", 24, 140, 12, AppPalette.Muted.Color, logicalWidth - 48, 45);
             }
-            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(Solid(180, 158, 195, 219), 1.5), new Rect(2, 2, 416, height - 4), 10, 10);
+            for (var index = 0; index < items.Count; index++)
+            {
+                var left = 14 + index % Columns * CellWidth;
+                var top = 57 + index / Columns * 94 - scrollOffset;
+                if (top + 88 < 49 || top > height - 8) continue;
+                var cell = new Rect(left, top, CellWidth - 4, 88);
+                if (index == selected) drawing.DrawRoundedRectangle(AppPalette.Translucent(38, AppPalette.Text), new Pen(AppPalette.Translucent(95, AppPalette.Text), 1), cell, 7, 7);
+                else if (index == hovered) drawing.DrawRoundedRectangle(AppPalette.Translucent(12, AppPalette.Text), new Pen(AppPalette.Translucent(22, AppPalette.Text), 1), cell, 7, 7);
+                var center = left + (CellWidth - 4) / 2;
+                if (items[index].Icon is { } icon) drawing.DrawImage(icon, new Rect(center - 20, top + 7, 40, 40));
+                else drawing.DrawRoundedRectangle(AppPalette.ScrollThumb, null, new Rect(center - 16, top + 11, 32, 32), 6, 6);
+                Text(drawing, items[index].Name, left + 4, top + 53, 11, AppPalette.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
+            }
+            drawing.Pop();
+            if (MaxScroll > 0)
+            {
+                var track = height - 64;
+                var thumb = Math.Max(24, track * track / (track + MaxScroll));
+                drawing.DrawRoundedRectangle(AppPalette.Translucent(95, AppPalette.Secondary), null,
+                    new Rect(logicalWidth - 8, 54 + scrollOffset / MaxScroll * (track - thumb), 3, thumb), 1.5, 1.5);
+            }
+            if (!layoutLocked)
+                drawing.DrawLine(new Pen(AppPalette.Translucent(72, AppPalette.Secondary), 1), new Point(logicalWidth - 16, height - 8), new Point(logicalWidth - 8, height - 16));
+            if (highlighted) drawing.DrawRoundedRectangle(null, new Pen(AppPalette.Translucent(235, AppPalette.Accent), 2), new Rect(1, 1, logicalWidth - 2, height - 2), 11, 11);
+            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(AppPalette.Translucent(180, AppPalette.Accent), 1.5), new Rect(2, 2, logicalWidth - 4, height - 4), 10, 10);
             drawing.Pop();
         }
         var bitmap = new RenderTargetBitmap(Width, FullHeight, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
         lastBitmap = bitmap;
         SurfaceBuilds++;
-        var target = IsExpanded ? 352d : 46d;
+        var target = IsExpanded ? logicalHeight : 46d;
         if (Math.Abs(target - animationTo) > .01)
         {
             animationFrom = displayHeight; animationTo = target;
@@ -282,10 +371,11 @@ internal sealed class ShortcutPanel : IDisposable
     private int HitItem(int x, int y)
     {
         if (folded && !hoveringOpen || y < 57 * scale) return -1;
-        var column = (int)(x / scale - 16) / 98;
-        var row = (int)(y / scale - 57) / 94;
-        var index = row * 4 + column;
-        return x >= 16 * scale && column is >= 0 and < 4 && row is >= 0 and < 3 && index < items.Count ? index : -1;
+        if (y > Height - 8 * scale || x < 14 * scale || x >= (logicalWidth - 14) * scale) return -1;
+        var column = (int)((x / scale - 14) / CellWidth);
+        var row = (int)((y / scale - 57 + scrollOffset) / 94);
+        var index = row * Columns + column;
+        return column >= 0 && column < Columns && row >= 0 && index >= 0 && index < items.Count ? index : -1;
     }
 
     internal void SetFolded(bool value)
@@ -367,11 +457,23 @@ internal sealed class ShortcutPanel : IDisposable
             case 0x21: return 3;
             case 0x14: return 1;
             case 0x201:
+                var edges = HitResize(x, y);
+                if (edges != 0)
+                {
+                    resizeEdges = edges; gestureStart = ScreenBounds;
+                    DesktopAttachment.GetCursorPos(out dragStart); SetCapture(Handle); return 0;
+                }
+                if (x >= Width - 12 * scale && y >= 49 * scale && MaxScroll > 0)
+                {
+                    scrolling = true; ScrollAt(y); SetCapture(Handle); return 0;
+                }
                 if (y < 46 * scale)
                 {
                     if (x > Width - 42 * scale) { SetFolded(!folded); return 0; }
+                    if (x > Width - 82 * scale) { ManageRequested?.Invoke(); return 0; }
+                    if (layoutLocked) return 0;
                     DesktopAttachment.GetCursorPos(out dragStart);
-                    startX = X; startY = Y; dragging = true; SetCapture(Handle);
+                    startX = X; startY = Y; gestureStart = ScreenBounds; dragging = true; SetCapture(Handle);
                 }
                 else
                 {
@@ -385,10 +487,16 @@ internal sealed class ShortcutPanel : IDisposable
                 }
                 return 0;
             case 0x200:
+                if (scrolling) { ScrollAt(y); return 0; }
+                if (resizeEdges != 0) { ResizePointer(); return 0; }
                 if (dragging)
                 {
                     DesktopAttachment.GetCursorPos(out var cursor);
-                    MoveTo(startX + cursor.X - dragStart.X, startY + cursor.Y - dragStart.Y);
+                    var rect = gestureStart with { X = gestureStart.X + cursor.X - dragStart.X, Y = gestureStart.Y + cursor.Y - dragStart.Y };
+                    rect = TransformLayout?.Invoke(rect, 0) ?? rect;
+                    var point = new NativeDesktop.Point { X = (int)Math.Round(rect.X), Y = (int)Math.Round(rect.Y) };
+                    DesktopAttachment.ScreenToClient(host, ref point);
+                    MoveTo(point.X, point.Y);
                 }
                 else if (pressedItem >= 0)
                 {
@@ -401,15 +509,29 @@ internal sealed class ShortcutPanel : IDisposable
                     iconGhost?.Move(cursor);
                     if (iconDragging) SetCursor(LoadCursor(0, (nint)(IsDesktopAt(cursor) ? 32512 : 32648)));
                 }
-                else { PointerMove(x, y); TrackPointerLeave(); }
+                else
+                {
+                    var hit = HitResize(x, y);
+                    var cursorId = hit is 3 or 12 ? 32512 : (hit & 3) != 0 && (hit & 12) != 0 ? (hit is 5 or 10 ? 32642 : 32643) : (hit & 3) != 0 ? 32644 : (hit & 12) != 0 ? 32645 : 32512;
+                    SetCursor(LoadCursor(0, (nint)cursorId));
+                    PointerMove(x, y); TrackPointerLeave();
+                }
                 return 0;
             case 0x202:
                 if (pressedItem >= 0) { CompleteIconGesture(); return 0; }
-                if (dragging) { dragging = false; ReleaseCapture(); EnsureAttached(true); moved(X, Y); UpdateHoverAfterMove(); }
+                if (resizeEdges != 0) { ResizePointer(force: true); resizeEdges = 0; ReleaseCapture(); CommitLayout(); return 0; }
+                if (scrolling) { scrolling = false; ReleaseCapture(); return 0; }
+                if (dragging) { dragging = false; ReleaseCapture(); CommitLayout(); }
                 return 0;
+            case 0x20A:
+                ScrollBy(-(short)((wParam.ToInt64() >> 16) & 0xffff) / 120d * 94);
+                return 0;
+            case 0x205:
+                ManageRequested?.Invoke(); return 0;
             case 0x215:
                 if (pressedItem >= 0) { CancelIconGesture(); UpdateHoverAfterMove(); }
-                if (dragging) { dragging = false; moved(X, Y); UpdateHoverAfterMove(); }
+                if (dragging || resizeEdges != 0) { dragging = false; resizeEdges = 0; CommitLayout(); }
+                scrolling = false;
                 return 0;
             case 0x203:
                 var item = HitItem(x, y);
@@ -419,6 +541,55 @@ internal sealed class ShortcutPanel : IDisposable
                 PointerLeave(); return 0;
         }
         return DefWindowProc(Handle, message, wParam, lParam);
+    }
+
+    private int HitResize(int x, int y)
+    {
+        if (layoutLocked) return 0;
+        var margin = 6 * scale;
+        var horizontal = x < margin ? 1 : x >= Width - margin ? 2 : 0;
+        var vertical = !IsExpanded ? 0 : y < margin ? 4 : y >= Height - margin ? 8 : 0;
+        return horizontal | vertical;
+    }
+
+    private void ScrollAt(int y)
+    {
+        if (MaxScroll <= 0) return;
+        var next = Math.Clamp((y / scale - 57) / Math.Max(1, logicalHeight - 68), 0, 1) * MaxScroll;
+        ScrollBy(next - scrollOffset);
+    }
+
+    private void ResizePointer(bool force = false)
+    {
+        if (!force && Environment.TickCount64 - lastResize < 16) return;
+        lastResize = Environment.TickCount64;
+        DesktopAttachment.GetCursorPos(out var cursor);
+        var dx = cursor.X - dragStart.X; var dy = cursor.Y - dragStart.Y;
+        var rect = gestureStart;
+        if ((resizeEdges & 1) != 0) rect = rect with { X = rect.X + dx, Width = rect.Width - dx };
+        if ((resizeEdges & 2) != 0) rect = rect with { Width = rect.Width + dx };
+        if ((resizeEdges & 4) != 0) rect = rect with { Y = rect.Y + dy, Height = rect.Height - dy };
+        if ((resizeEdges & 8) != 0) rect = rect with { Height = rect.Height + dy };
+        var width = Math.Clamp(rect.Width, 244 * scale, 1400 * scale);
+        var height = IsExpanded ? Math.Clamp(rect.Height, 160 * scale, 1100 * scale) : 46 * scale;
+        rect = rect with { X = (resizeEdges & 1) != 0 ? gestureStart.Right - width : rect.X,
+            Y = (resizeEdges & 4) != 0 ? gestureStart.Bottom - height : rect.Y, Width = width, Height = height };
+        rect = TransformLayout?.Invoke(rect, resizeEdges) ?? rect;
+        var point = new NativeDesktop.Point { X = (int)Math.Round(rect.X), Y = (int)Math.Round(rect.Y) };
+        DesktopAttachment.ScreenToClient(host, ref point);
+        X = point.X; Y = point.Y;
+        logicalWidth = Math.Clamp(rect.Width / scale, 244, 1400);
+        if (IsExpanded) logicalHeight = Math.Clamp(rect.Height / scale, 160, 1100);
+        displayHeight = animationFrom = animationTo = IsExpanded ? logicalHeight : 46;
+        animationTimer.Stop(); scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
+        screenPosition = new NativeDesktop.Point { X = (int)Math.Round(rect.X), Y = (int)Math.Round(rect.Y) };
+        Render();
+    }
+
+    private void CommitLayout()
+    {
+        InteractionEnded?.Invoke();
+        EnsureAttached(true); moved(X, Y); LayoutCommitted?.Invoke(); UpdateHoverAfterMove();
     }
 
     internal bool IsDesktopAt(NativeDesktop.Point point)
@@ -456,7 +627,6 @@ internal sealed class ShortcutPanel : IDisposable
         if (point.X < 0 || point.X >= Width || point.Y < 0 || point.Y >= Height) PointerLeave();
     }
 
-    private static SolidColorBrush Solid(byte alpha, byte red, byte green, byte blue) => new(Color.FromArgb(alpha, red, green, blue));
     private static void Text(DrawingContext drawing, string text, double x, double y, double size, Color color, double width, double height, FontWeight? weight = null, TextAlignment alignment = TextAlignment.Left)
     {
         if (string.IsNullOrEmpty(text)) return;
@@ -492,12 +662,12 @@ internal sealed class ShortcutPanel : IDisposable
     {
         animationTimer.Stop(); gestureTimer.Stop();
         if (pressedItem >= 0) CancelIconGesture();
-        if (dragging) { dragging = false; ReleaseCapture(); }
+        if (dragging || resizeEdges != 0 || scrolling) { dragging = false; resizeEdges = 0; scrolling = false; ReleaseCapture(); InteractionEnded?.Invoke(); }
         if (dropRegistered) { RevokeDragDrop(Handle); dropRegistered = false; }
         dropTarget = null;
         if (Handle != 0) { var handle = Handle; Handle = 0; Instances.Remove(handle); if (destroy && IsWindow(handle)) DestroyWindow(handle); }
         fileDrag = tracking = hoveringOpen = false; hovered = -1;
-        displayHeight = animationFrom = animationTo = folded ? 46 : 352;
+        displayHeight = animationFrom = animationTo = folded ? 46 : logicalHeight;
     }
 
     private sealed record PanelItem(string Name, string Path, BitmapSource? Icon);

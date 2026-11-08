@@ -4,15 +4,17 @@
 
 ![栖格品牌设计](assets/brand/qige-brand-preview.png)
 
-当前源码为 **0.1.0-beta.2**，小范围测试阶段。已发布的首个测试包为 [v0.1.0-beta.1](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.1)，它仍采用旧数据目录；beta.2 的目录调整见[更新记录](CHANGELOG.md)。
+当前版本为 **[v0.1.0-beta.6](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.6)**，小范围测试阶段。新增蓝白双模式管理面板，统一应用图标，并修复样例关闭后的托盘驻留。[运行效果与发布说明](docs/releases/v0.1.0-beta.6.md) · [更新记录](CHANGELOG.md)。
 
 ## 使用
 
 将发布 ZIP 完整解压到固定、可写目录，双击 `DesktopGroups.exe`。标准包自带 .NET 运行时。首次可用“打开样例.cmd”体验，随后少量收纳真实桌面快捷方式。详见[使用说明](docs/user-guide.md)。
 
-目前支持单分区、最多 12 个个人桌面 `.lnk` / `.url`：整组移动、悬停折叠动画、图标高亮、拖回桌面解除分组、同目标快捷方式重建同步、托盘常驻和可选开机启动。关闭控制窗口收起到托盘；“退出并归还”真正退出，并归还桌面内容。
+目前支持多个桌面整理抽屉，管理面板可新建、重命名、定位和安全移除抽屉，分别记忆位置、尺寸、折叠和锁定状态。支持边缘调整大小、自动排布与滚动、屏幕及相邻抽屉的边缘／中心吸附，按住 Alt 可临时绕过吸附。
 
-尚无多分区、调整大小、滚动、普通文件／文件夹、公共桌面入口、原生右键菜单或全桌面双击隐藏。真实 Explorer 重启、休眠、双屏插拔、混合 DPI 和长期共存仍需进一步验收。
+支持个人桌面 `.lnk` / `.url`，已取消原有 12 项限制。保留整组移动、悬停折叠动画、图标高亮、拖回桌面解除分组、同目标快捷方式重建同步、托盘常驻和可选开机启动。正式模式与隔离样例关闭面板后均可收起到托盘；“退出并归还全部”真正退出，并归还全部抽屉内容。
+
+文件夹映射抽屉、普通文件／文件夹、公共桌面入口、原生右键菜单和全桌面双击隐藏仍在后续规划中。真实 Explorer 重启、休眠、双屏插拔、混合 DPI 和长期共存仍需进一步验收。
 
 ## 数据存放
 
@@ -62,6 +64,8 @@ artifacts/                  发布包与品牌导出（不提交）
 .\build.ps1 -Task Demo              # 本机隔离样例
 .\build.ps1 -Task Run               # 使用 .local/QigeData 的真实桌面模式
 .\build.ps1 -Task ResidentTest      # 托盘、单实例及模拟桌面恢复
+.\build.ps1 -Task LayoutTest        # 多抽屉、恢复与布局吸附
+.\build.ps1 -Task ManagerTest       # 隔离管理面板和预览导出
 .\build.ps1 -Task StorageRenderTest # 面板、动画、OLE 与 120 次移动
 .\build.ps1 -Task IconTest          # 快捷方式图标解析
 .\publish.ps1                      # 自带运行时的 win-x64 ZIP 和 SHA256
@@ -70,6 +74,6 @@ pwsh -STA -File scripts/build-brand.ps1 # 导出到 artifacts/brand
 
 桌面相关检查需在已登录的 Windows 桌面会话运行；CI 只运行不依赖交互桌面的数据检查。发布输出在 `artifacts/releases`，仅打包正式应用和指定用户文档，不含个人数据、测试工具或开发缓存。
 
-[开发说明](docs/development.md) · [当前架构](docs/architecture.md) · [品牌说明](docs/brand.md) · [历史文档](docs/history/README.md)
+[抽屉产品规划](docs/drawer-types.md) · [后续规划](docs/roadmap.md) · [开发说明](docs/development.md) · [当前架构](docs/architecture.md) · [管理面板设计](docs/management-panel.md) · [品牌说明](docs/brand.md) · [历史文档](docs/history/README.md)
 
 反馈请通过 Issues 提供复现步骤与系统环境。诊断含本机路径等信息，分享前先脱敏；不要上传个人快捷方式、整个 `QigeData` 或历史数据目录。本项目自行实现，不包含 Fences 的代码或资源。

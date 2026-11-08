@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- 栖格 Qige - Windows 11 深色/黑底 App Icon (海渊深蓝底板) -->
+  <rect width="128" height="128" rx="28" fill="#0B132B"/>
+  <rect x="0.5" y="0.5" width="127" height="127" rx="27.5" stroke="#FFFFFF" stroke-opacity="0.12"/>
+  <g transform="translate(14, 14)">
+    <path d="M 80 44 L 80 28 C 80 21.37 74.63 16 68 16 L 28 16 C 21.37 16 16 21.37 16 28 L 16 72 C 16 78.63 21.37 84 28 84 L 44 84"
+          stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="54" y="58" width="28" height="28" rx="8" fill="#38BDF8"/>
+  </g>
+</svg>
