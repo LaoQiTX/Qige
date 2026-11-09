@@ -10,6 +10,7 @@
 - `-Task SelfTest`：数据目录与迁移；包括活动入口、NTFS 下载来源流、配置备份、幂等、中断和冲突。
 - `-Task StorageTest`：收纳、同步、拖回、冲突和中断恢复，不移动真实桌面文件。
 - `-Task LayoutTest`：多抽屉所有权、旧分组接续、安全移除和中断恢复，边缘／中心吸附、滞回、DPI、缩放锚点及屏幕回收。
+- `-Task P0Test`：后台 STA、图标合并与容量、恢复重试调度、布局合并、冲突检查、校验导出和性能样本上限；包含在 `Test` 中。
 - `-Task ManagerTest`：打开隔离 WPF 管理面板，检查抽屉创建／移除、18 项滚动与命中、列数重排、折叠和锁定，并导出面板及抽屉 PNG 预览；不移动真实桌面文件。
 - `-Task ResidentTest`：需交互桌面，使用内存启动项模拟，不更改实际开机启动。
 - `-Task StorageRenderTest`：需交互桌面，创建样例分区，检查动画、OLE 和 120 次移动。
@@ -29,8 +30,12 @@
 
 品牌源文件和 ICO 在 `assets/brand`。`scripts/build-brand.ps1` 将各尺寸导出至 `artifacts/brand`；指定 `-UpdateAssets` 才更新需提交的 SVG、ICO 与预览，不提交所有重复 PNG。
 
+正式构建入口为 `Qige.exe`，项目路径与命名空间继续沿用 `DesktopGroups`。`.\publish.ps1 -Installer` 额外生成中文安装包到 `artifacts/installers`；需 Inno Setup，可用 `-InnoSetupCompiler` 指定编译器。安装包保留 exe 旁的 `QigeData`，升级和卸载不删除用户数据。构建方法、单 EXE 解包约束及升级保护见 [分发与安装包](distribution.md)。
+
 ## 提交约定
 
 文本统一 UTF-8、LF，规则在 `.editorconfig` 和 `.gitattributes`。修改搬移、恢复或数据布局时运行 `Test`；修改窗口、拖放、绘制时再运行对应交互检查。
 
 不提交 `.local`、`.build`、`artifacts`、bin/obj、`QigeData`、旧版数据、本机技能配置、凭证、转储和日志。不要添加真实个人快捷方式。发布前检查暂存 diff 和打包内容。历史设计保留在 `docs/history`，当前行为以使用说明、架构和代码为准。
+
+本轮三个 P0 的线程边界、性能口径和实机验收范围见 [P0 实现与验收](p0-validation.md)。

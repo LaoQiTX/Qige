@@ -32,10 +32,14 @@ internal sealed class StartupRegistration
 
     public void UpgradeLegacyRegistration(AppStorage storage)
     {
+        var oldExecutable = Path.Combine(storage.InstallDirectory, "DesktopGroups.exe");
+        var renamedCommand = $"\"{oldExecutable}\" --data-dir \"{storage.Root}\" --background";
+        if (registry.Read(ValueName) == renamedCommand) registry.Write(ValueName, Command);
+
         foreach (var root in new[] { storage.LegacyRoot, storage.InstallDirectory }.OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var name = "DesktopGroups-" + ProjectId(root);
-            var oldCommand = $"\"{AppLaunch.Executable}\" --root \"{root}\" --background";
+            var oldCommand = $"\"{oldExecutable}\" --root \"{root}\" --background";
             if (registry.Read(name) != oldCommand) continue;
             var current = registry.Read(ValueName);
             if (current != null && current != Command) throw new IOException("新启动入口已被修改，旧启动入口已保留。");

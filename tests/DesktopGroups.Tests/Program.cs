@@ -14,6 +14,7 @@ internal static class Program
             storage = new AppStorage(Path.Combine(storage.Root, "runs", Guid.NewGuid().ToString("N")));
             storage.EnsureWritable();
             storage.ConfigureTemporaryDirectory();
+            if (args.Contains("--p0-test")) return P0Checks.Run(storage);
             if (args.Contains("--layout-test")) return DrawerLayoutChecks.Run(storage);
             if (args.Contains("--manager-test")) return ManagerChecks.Run(storage);
             if (args.Contains("--storage-test")) return ShortcutStorageChecks.Run(storage);

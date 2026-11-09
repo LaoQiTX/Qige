@@ -209,6 +209,13 @@ internal sealed class ShortcutPanel : IDisposable
         if (IsAttached) Render();
     }
 
+    internal void SetPreparedItems(IEnumerable<(string Name, string Path, BitmapSource? Icon)> entries)
+    {
+        items = entries.Select(e => new PanelItem(e.Name, e.Path, e.Icon)).ToList();
+        selected = -1; hovered = -1; scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
+        if (IsAttached) Render();
+    }
+
     internal void MoveTo(int x, int y)
     {
         if (!SetWindowPos(Handle, 0, x, y, 0, 0, 0x01 | 0x04 | 0x10)) throw new Win32Exception(Marshal.GetLastWin32Error());

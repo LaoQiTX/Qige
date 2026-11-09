@@ -1,10 +1,13 @@
 #requires -Version 7.0
 param(
-    [string]$Version = '0.1.0-beta.7',
-    [switch]$FrameworkDependent
+    [string]$Version = '0.1.0-beta.8',
+    [switch]$FrameworkDependent,
+    [switch]$Installer,
+    [string]$InnoSetupCompiler
 )
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid version.' }
+if ($Installer -and $FrameworkDependent) { throw 'The installer must include the .NET runtime.' }
 . (Join-Path $PSScriptRoot 'ProjectEnvironment.ps1')
 Invoke-ProjectEnvironment {
     param($projectRoot)
@@ -32,11 +35,11 @@ Invoke-ProjectEnvironment {
         }
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/user-guide.md') -Destination (Join-Path $packageFolder '使用说明.md')
         Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $packageFolder
-        $launcher = @('@echo off','start "" "%~dp0DesktopGroups.exe" --demo','') -join [Environment]::NewLine
+        $launcher = @('@echo off','start "" "%~dp0Qige.exe" --demo','') -join [Environment]::NewLine
         [IO.File]::WriteAllText((Join-Path $packageFolder '打开样例.cmd'), $launcher, [Text.Encoding]::ASCII)
         [IO.File]::WriteAllText((Join-Path $packageFolder 'package.json'), (@{
             name='Qige'; displayName='栖格'; version=$Version; platform='win-x64'
-            selfContained=(-not $FrameworkDependent); entry='DesktopGroups.exe'; dataDirectory='QigeData'
+            selfContained=(-not $FrameworkDependent); entry='Qige.exe'; dataDirectory='QigeData'
         } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
         $badFolders = @('QigeData','Data','Storage','TestData','.git','.build','.local','tests','tools')
         foreach ($folder in $badFolders) {
@@ -51,6 +54,9 @@ Invoke-ProjectEnvironment {
         [IO.File]::WriteAllText($zip + '.sha256', $hash + '  ' + [IO.Path]::GetFileName($zip) + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
         Write-Output "Package: $zip"
         Write-Output "SHA256: $hash"
+        if ($Installer) {
+            & (Join-Path $PSScriptRoot 'build-installer.ps1') -PackageDirectory $packageFolder -Version $Version -InnoSetupCompiler $InnoSetupCompiler
+        }
     }
     finally {
         # Only our own generated staging directory may be removed.

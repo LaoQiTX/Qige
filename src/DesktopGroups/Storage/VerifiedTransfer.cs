@@ -51,6 +51,20 @@ internal static class VerifiedTransfer
         MarkDeleted(handle);
     }
 
+    public static void Copy(string source, string destination)
+    {
+        ValidatePath(source); ValidatePath(destination);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (input.Length > 4 * 1024 * 1024) throw new IOException("仅支持不超过 4 MB 的快捷方式副本。");
+        var hash = Convert.ToHexString(SHA256.HashData(input)); input.Position = 0;
+        using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        { input.CopyTo(output); output.Flush(flushToDisk: true); }
+        CopyStreams(source, destination);
+        File.SetLastWriteTimeUtc(destination, File.GetLastWriteTimeUtc(source));
+        if (Hash(destination) != hash) throw new IOException("副本校验失败，原文件仍保留。");
+    }
+
     public static void ValidatePath(string path)
     {
         for (var current = Path.GetFullPath(path); current != null; current = Path.GetDirectoryName(current))

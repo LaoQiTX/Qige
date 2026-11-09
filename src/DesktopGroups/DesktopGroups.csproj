@@ -3,11 +3,12 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <AssemblyName>DesktopGroups</AssemblyName>
+    <AssemblyName>Qige</AssemblyName>
+    <RootNamespace>DesktopGroups</RootNamespace>
     <Product>栖格 Qige</Product>
     <Title>栖格 Qige</Title>
     <Description>轻量的 Windows 桌面分区整理工具</Description>
-    <Version>0.1.0-beta.7</Version>
+    <Version>0.1.0-beta.8</Version>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
     <ApplicationIcon>..\..\assets\brand\qige.ico</ApplicationIcon>

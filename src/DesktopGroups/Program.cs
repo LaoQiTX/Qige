@@ -12,6 +12,8 @@ internal static class Program
         Console.OutputEncoding = Encoding.UTF8;
         try
         {
+            // The installer checks this lifetime marker; data locks still control single-instance access.
+            using var installerGuard = new Mutex(false, @"Local\Qige.Application");
             var storage = AppStorage.FromArguments(args);
             storage.EnsureWritable();
             using var sessionLock = AcquireSession(storage, args);

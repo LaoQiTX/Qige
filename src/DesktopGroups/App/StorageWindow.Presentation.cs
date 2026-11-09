@@ -14,7 +14,6 @@ internal sealed record ManagerMonitor(string? Device, string Label);
 internal sealed partial class StorageWindow
 {
     private ListCollectionView? canvasRows, studioRows;
-    private readonly Dictionary<string, BitmapSource?> managerIcons = [];
     private IReadOnlyList<ManagerContent> currentContents = [];
     private IReadOnlyList<DesktopMonitor> managerMonitors = [];
     private bool refreshingViews;
@@ -131,12 +130,7 @@ internal sealed partial class StorageWindow
             var collected = active.Contains(e.Id);
             var path = collected ? store.StoredPath(e) : e.OriginalPath;
             var key = e.Id + ":" + e.Hash + ":" + path;
-            if (!managerIcons.TryGetValue(key, out var icon))
-            {
-                try { icon = File.Exists(path) ? ShortcutIcon.Load(path, e.OriginalPath).Bitmap : null; }
-                catch (Exception exception) when (exception is IOException or ArgumentException or System.Runtime.InteropServices.COMException) { icon = null; }
-                managerIcons[key] = icon;
-            }
+            iconCache.TryGet(key, out var icon);
             var state = collected ? "已收纳" : "在桌面／待检查";
             var coordinates = e.OriginalX.HasValue && e.OriginalY.HasValue ? $"原坐标 ({e.OriginalX}, {e.OriginalY})" : "未记录原坐标";
             return new ManagerContent(e.Id, Path.GetFileNameWithoutExtension(e.OriginalPath), e.OriginalPath, path,
@@ -189,20 +183,19 @@ internal sealed partial class StorageWindow
     {
         if (sender is not FrameworkElement { DataContext: ManagerContent item } || SelectedRuntime is not { } runtime) return;
         if (!item.CanReturn) { Status("此入口已在桌面，无需再次归还。"); return; }
-        runtime.Row.Store.ReturnAndUngroup(item.Path);
-        UpdateDetail(); Status($"已将「{item.Name}」归还桌面并解除此项分组。");
+        _ = RunStoreAsync(runtime, "归还并解除分组", store => { store.ReturnAndUngroup(item.Path); return []; });
     });
     private void ShowModal(Border box)
     {
         if (ModalLayer.Visibility != Visibility.Visible) modalReturnFocus = Keyboard.FocusedElement;
-        CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = Visibility.Collapsed;
+        CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = HealthBox.Visibility = Visibility.Collapsed;
         ModalLayer.Visibility = box.Visibility = Visibility.Visible;
         KeyboardNavigation.SetTabNavigation(box, KeyboardNavigationMode.Cycle);
         box.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
     }
     private void DismissModal()
     {
-        ModalLayer.Visibility = CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = Visibility.Collapsed;
+        ModalLayer.Visibility = CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = HealthBox.Visibility = Visibility.Collapsed;
         if (modalReturnFocus != null) Keyboard.Focus(modalReturnFocus);
     }
     private void DismissModalClick(object sender, RoutedEventArgs e) => DismissModal();

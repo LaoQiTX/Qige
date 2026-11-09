@@ -7,9 +7,7 @@
 | 文件名 | 类型 | 说明 |
 | :--- | :--- | :--- |
 | [`qige_management_panel.html`](./qige_management_panel.html) | **主原型 (双模合一版)** | **最终交付主界面**。顶栏支持一键无缝切换：<br>① **空间沙盘模式 (Bento Canvas)**：宏观桌面微缩沙盘、抽屉大图标网格、右上角贴边/手柄状态、闪烁定位；<br>② **工作台详情模式 (Studio Mode)**：经典侧栏分类、纵向文件列表（含快捷方式角标等真实系统级 .ico）、右侧属性检查器。严格统一为海渊蓝白高定调色盘。 |
-| [`qige_management_panel_v2.html`](./qige_management_panel_v2.html) | 独立原型 (Bento 沙盘版) | 纯粹桌面空间沙盘矩阵形态，提供大图标网格视图与列表视图切换。 |
 | [`qige_blue_white_palette.html`](./qige_blue_white_palette.html) | 调色盘画板 | 方案一（海渊双蓝 · 推荐）、方案二（冰川瓷蓝）、方案三（皇家单色蓝）交互对比画板。 |
-| [`qige_logo_redesign_presentation.html`](./qige_logo_redesign_presentation.html) | 品牌设计画板 | 品牌概念解析、符号语法、深浅两色 App 图标及任务栏多尺寸落地演示。 |
 
 ---
 

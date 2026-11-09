@@ -4,11 +4,13 @@
 
 ![栖格品牌设计](assets/brand/qige-brand-preview.png)
 
-当前版本为 **[v0.1.0-beta.7](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.7)**，小范围测试阶段。工作台左侧按设计稿更新搜索、分组计数、抽屉选中样式及底部偏好设置。[运行效果与发布说明](docs/releases/v0.1.0-beta.7.md) · [更新记录](CHANGELOG.md)。
+当前版本为 **[v0.1.0-beta.8](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8)**，小范围测试阶段。提供中文安装包和便携 ZIP，新增桌面恢复调度、“运行与恢复”面板和本机性能记录；收纳及 Shell 图标解析转到后台。[运行效果与发布说明](docs/releases/v0.1.0-beta.8.md) · [实现与验收边界](docs/p0-validation.md) · [更新记录](CHANGELOG.md)。
 
 ## 使用
 
-将发布 ZIP 完整解压到固定、可写目录，双击 `DesktopGroups.exe`。标准包自带 .NET 运行时。首次可用“打开样例.cmd”体验，随后少量收纳真实桌面快捷方式。详见[使用说明](docs/user-guide.md)。
+运行安装包，在向导中选择可写的安装目录，然后从开始菜单启动栖格。安装器自带 .NET 运行时，无需另装环境。收纳的文件、桌面快捷方式和配置位于所选目录内的 `QigeData`，开始菜单也提供“栖格的数据文件夹”入口；升级和卸载均保留此目录。
+
+也可将便携 ZIP 完整解压到固定、可写目录，双击 `Qige.exe`。首次可用“打开样例.cmd”体验，随后少量收纳真实桌面快捷方式。详见[使用说明](docs/user-guide.md)。历史 beta.7 及更早发布包的入口名为 `DesktopGroups.exe`；beta.8 起使用新名称。
 
 目前支持多个桌面整理抽屉，管理面板可新建、重命名、定位和安全移除抽屉，分别记忆位置、尺寸、折叠和锁定状态。支持边缘调整大小、自动排布与滚动、屏幕及相邻抽屉的边缘／中心吸附，按住 Alt 可临时绕过吸附。
 
@@ -22,7 +24,7 @@
 
 ```text
 安装目录/
-├── DesktopGroups.exe
+├── Qige.exe
 ├── …运行时文件
 ├── 使用说明.md
 └── QigeData/
@@ -50,6 +52,7 @@ tests/DesktopGroups.Tests/  隔离回归检查，不随正式程序发布
 tools/DesktopGroups.Diagnostics/  桌面诊断与历史原型，不随正式程序发布
 assets/brand/               品牌 SVG、应用 ICO、设计预览
 scripts/                    构建、发布、品牌导出脚本
+installer/                  安装向导、升级与卸载保护
 docs/                       当前说明、架构、历史设计与发布记录
 .github/                    问题模板与 Windows 构建检查
 Qige.slnx                   解决方案
@@ -69,10 +72,11 @@ artifacts/                  发布包与品牌导出（不提交）
 .\build.ps1 -Task StorageRenderTest # 面板、动画、OLE 与 120 次移动
 .\build.ps1 -Task IconTest          # 快捷方式图标解析
 .\publish.ps1                      # 自带运行时的 win-x64 ZIP 和 SHA256
+.\publish.ps1 -Installer           # 同时生成中文安装 EXE（需要 Inno Setup）
 pwsh -STA -File scripts/build-brand.ps1 # 导出到 artifacts/brand
 ```
 
-桌面相关检查需在已登录的 Windows 桌面会话运行；CI 只运行不依赖交互桌面的数据检查。发布输出在 `artifacts/releases`，仅打包正式应用和指定用户文档，不含个人数据、测试工具或开发缓存。
+桌面相关检查需在已登录的 Windows 桌面会话运行；CI 只运行不依赖交互桌面的数据检查。ZIP 输出在 `artifacts/releases`，安装包在 `artifacts/installers`，均附 SHA256。仅打包正式应用和指定用户文档，不含个人数据、测试工具或开发缓存。安装包构建及方案说明见[分发方案](docs/distribution.md)。
 
 [抽屉产品规划](docs/drawer-types.md) · [后续规划](docs/roadmap.md) · [开发说明](docs/development.md) · [当前架构](docs/architecture.md) · [管理面板设计](docs/management-panel.md) · [品牌说明](docs/brand.md) · [历史文档](docs/history/README.md)
 

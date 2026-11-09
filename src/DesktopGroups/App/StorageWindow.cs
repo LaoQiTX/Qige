@@ -27,7 +27,7 @@ internal sealed partial class StorageWindow : Window
     private readonly StartupRegistration? startup;
     private FileSystemWatcher? watcher;
     private ResidentTray? tray;
-    private bool initializing = true, updating, closing, exitRequested, sessionEnding, environmentPending;
+    private bool initializing = true, updating, closing, exitRequested, sessionEnding;
     private string lastConnection = "";
     private int syncRetries;
     internal bool TrayAvailable => tray?.Available == true;
@@ -49,6 +49,7 @@ internal sealed partial class StorageWindow : Window
         if (demo) SeedDemo(sampleDesktop!);
         if (!demo) startup = new StartupRegistration(storage);
         InitializeComponent();
+        InitializeHealth();
         Title = demo ? "栖格 Qige · 管理面板样例" : $"栖格 Qige · 抽屉管理 · {AppBrand.Version}";
         Icon = BitmapFrame.Create(AppBrand.IconUri); BrandIcon.Source = Icon;
         VersionLabel.Text = $"QIGE / {AppBrand.Version}";
@@ -63,7 +64,7 @@ internal sealed partial class StorageWindow : Window
         };
         Loaded += (_, _) => Initialize();
         syncTimer.Tick += (_, _) => Synchronize();
-        desktopTimer.Tick += (_, _) => RecoverDesktop(environmentPending);
+        desktopTimer.Tick += (_, _) => DesktopTick();
         environmentTimer.Tick += (_, _) => { environmentTimer.Stop(); RecoverDesktop(true); };
         Closing += OnClosing;
         Application.Current.SessionEnding += OnSessionEnding;
@@ -101,31 +102,15 @@ internal sealed partial class StorageWindow : Window
             }
             RefreshStartup();
             tray = new ResidentTray(storage.Root, TrayAction, () => startup?.Enabled == true, startupAvailable: !demo);
-            tray.EnvironmentChanged += _ => { environmentPending = true; environmentTimer.Stop(); environmentTimer.Start(); };
-            var pendingIssues = new Dictionary<string, IReadOnlyList<string>>();
-            foreach (var pending in catalog.Settings.Drawers.Where(d => d.Removing).ToArray())
-            {
-                var issues = catalog.Remove(pending.Id);
-                if (issues.Count > 0) pendingIssues[pending.Id] = issues;
-            }
+            tray.EnvironmentChanged += SignalEnvironment;
             foreach (var drawer in catalog.Settings.Drawers.ToArray())
-            {
                 AddRuntime(drawer);
-                if (pendingIssues.TryGetValue(drawer.Id, out var issues)) Issues(runtimes[drawer.Id], issues);
-            }
             initializing = false;
             SelectDrawer(catalog.Settings.SelectedId ?? rows.FirstOrDefault()?.Id ?? "");
-            var desktop = catalog.Stores.Values.FirstOrDefault()?.DesktopPath
-                ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-            if (Directory.Exists(desktop))
-            {
-                watcher = new FileSystemWatcher(desktop)
-                { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
-                watcher.Created += WatchChanged; watcher.Changed += WatchChanged; watcher.Renamed += WatchChanged;
-                watcher.Error += (_, _) => Dispatcher.BeginInvoke(() => { if (!closing) { syncRetries = 0; syncTimer.Start(); } });
-                watcher.EnableRaisingEvents = true;
-            }
+            RecreateDesktopWatcher();
             RecoverDesktop(true); desktopTimer.Start();
+            foreach (var pending in catalog.Settings.Drawers.Where(d => d.Removing).ToArray()) _ = RemoveDrawerAsync(pending.Id);
+            _ = ScanRecoveryAsync();
             if (demo) Status("样例使用独立文件。关闭面板后可在系统托盘重新打开；选择退出会归还样例内容。");
             else Status(runtimes.Values.FirstOrDefault(r => r.Issue != null)?.Issue ?? "抽屉已就绪。关闭面板后仍在托盘运行。");
             if (background && tray?.Available == true && runtimes.Values.All(r => r.Issue == null)) Hide();
@@ -139,25 +124,24 @@ internal sealed partial class StorageWindow : Window
         var row = new DrawerRow(definition, store);
         DrawerRuntime? runtime = null;
         var panel = new ShortcutPanel(Status, (_, _) => { if (runtime != null) SaveLayout(runtime); },
-            paths => !demo && AddPaths(definition.Id, paths),
+            paths => !demo && QueueAddPaths(definition.Id, paths),
             paths =>
             {
-                if (demo || definition.Removing) return false;
+                if (closing || demo || definition.Removing || runtime?.Busy == true) return false;
                 try { catalog.EnsureOwnership(definition.Id, paths); return store.CanAccept(paths); }
                 catch (Exception exception) when (exception is IOException or ArgumentException) { return false; }
             },
             path =>
             {
                 if (demo) { Status("样例内容仅在样例目录内使用。"); return; }
-                try { store.ReturnAndUngroup(path); Status("已归还桌面并解除分组。"); }
-                catch (Exception exception) { Status(exception.Message); }
+                if (runtime != null) _ = RunStoreAsync(runtime, "归还桌面并解除分组", copy => { copy.ReturnAndUngroup(path); return []; });
             });
         runtime = new DrawerRuntime(definition, row, panel);
         panel.Configure(definition.Name, store.Profile.Width, store.Profile.Height, store.Profile.Locked);
         panel.RestoreFolded(store.Profile.Folded);
         panel.FoldedChanged += folded =>
         {
-            store.Profile.Folded = folded; store.Save(); UpdateRow(runtime);
+            store.Profile.Folded = folded; if (!runtime.Busy) store.Save(); UpdateRow(runtime);
             if (Selected?.Id == definition.Id)
             {
                 FoldBox.IsChecked = folded;
@@ -170,7 +154,7 @@ internal sealed partial class StorageWindow : Window
         panel.InteractionEnded += () => { runtime.Snap = new(); guides.Hide(); };
         panel.LayoutCommitted += () => { SaveLayout(runtime); UpdateDetail(); };
         panel.ManageRequested += () => { SelectDrawer(definition.Id); ShowControl(); };
-        store.Changed += () => { if (!runtime.Batching) RefreshItems(runtime); };
+        store.Changed += () => RefreshItems(runtime);
         rows.Add(row); runtimes.Add(definition.Id, runtime);
         RefreshItems(runtime);
     }
@@ -199,11 +183,11 @@ internal sealed partial class StorageWindow : Window
 
     private void SaveLayout(DrawerRuntime runtime)
     {
-        if (!runtime.Panel.IsAttached) return;
+        if (!runtime.Panel.IsAttached || recoveringLayout) return;
         var rect = runtime.Panel.ScreenBounds; var profile = runtime.Row.Store.Profile;
         profile.X = (int)Math.Round(rect.X); profile.Y = (int)Math.Round(rect.Y);
         profile.Width = runtime.Panel.LogicalWidth; profile.Height = runtime.Panel.LogicalHeight;
-        runtime.Row.Store.Save();
+        if (!runtime.Busy) runtime.Row.Store.Save();
         if (Selected?.Id == runtime.Definition.Id) FillGeometry(runtime);
         RefreshOverview();
     }
@@ -211,11 +195,12 @@ internal sealed partial class StorageWindow : Window
     private void RefreshItems(DrawerRuntime runtime)
     {
         var active = runtime.Row.Store.Active;
-        var signature = string.Join("|", active.Select(e => e.StoredRelative + ":" + e.Hash));
+        var signature = string.Join("|", runtime.Row.Store.Profile.Entries.Select(e => e.Id + ":" + e.Phase + ":" + e.StoredRelative + ":" + e.Hash));
         if (runtime.ItemsSignature != signature)
         {
             runtime.ItemsSignature = signature;
-            runtime.Panel.SetItems(active.Select(e => (Path.GetFileNameWithoutExtension(e.OriginalPath), runtime.Row.Store.StoredPath(e), (string?)e.OriginalPath)));
+            runtime.Panel.SetPreparedItems(active.Select(e => (Path.GetFileNameWithoutExtension(e.OriginalPath), runtime.Row.Store.StoredPath(e), (BitmapSource?)null)));
+            _ = LoadRuntimeIconsAsync(runtime, signature);
         }
         UpdateRow(runtime);
         if (Selected?.Id == runtime.Definition.Id) FillContents(runtime.Row.Store);
@@ -235,24 +220,32 @@ internal sealed partial class StorageWindow : Window
         if (closing) return;
         tray?.EnsureAvailable();
         var deferred = false;
+        var failed = false;
+        recoveringLayout = true;
+        try
+        {
         foreach (var runtime in runtimes.Values.ToArray())
         {
             if (runtime.Panel.IsInteracting) { deferred |= force; continue; }
             try
             {
-                if (!runtime.Panel.IsAttached)
-                    runtime.Panel.ShowScreen(runtime.Row.Store.Profile.X, runtime.Row.Store.Profile.Y);
-                else runtime.Panel.EnsureAttached(force);
+                var p = runtime.Row.Store.Profile;
+                if (force || !runtime.Panel.IsAttached)
+                    runtime.Panel.ApplyScreenLayout(p.X, p.Y, p.Width, p.Height);
+                else runtime.Panel.EnsureAttached(false);
                 if (!runtime.Started && !runtime.Definition.Removing)
                 {
                     runtime.Started = true;
-                    Issues(runtime, runtime.Row.Store.StartSession());
+                    _ = RunStoreAsync(runtime, "恢复分组收纳", store => store.StartSession());
                 }
-                else if (force && !runtime.Paused && !runtime.Definition.Removing) Issues(runtime, runtime.Row.Store.Synchronize(), clear: false);
             }
-            catch (Exception exception) { Issues(runtime, [exception.Message], clear: false); }
+            catch (Exception exception) { failed = true; environmentIssue = "桌面连接暂不可用：" + exception.Message; }
         }
-        environmentPending = deferred;
+        }
+        finally { recoveringLayout = false; }
+        recoveryPolicy.Complete(!failed && !deferred, DateTimeOffset.UtcNow);
+        if (!failed) environmentIssue = "";
+        if (!failed && !deferred && runtimes.Values.All(r => r.Panel.IsAttached)) performance.MarkReady();
         var attached = runtimes.Values.Count(r => r.Panel.IsAttached);
         var state = $"桌面守护中 · {attached}/{runtimes.Count} 个抽屉";
         ConnectionLabel.Text = state;
@@ -265,15 +258,15 @@ internal sealed partial class StorageWindow : Window
             RefreshOverview();
         }
     }
-    private void Synchronize()
+    private async void Synchronize()
     {
         syncTimer.Stop();
         if (closing) return;
         var retry = false;
-        foreach (var runtime in runtimes.Values.Where(r => r.Started && !r.Paused && !r.Definition.Removing))
+        foreach (var runtime in runtimes.Values.Where(r => r.Started && !r.Paused && !r.Definition.Removing).ToArray())
         {
-            var issues = runtime.Row.Store.Synchronize();
-            Issues(runtime, issues, clear: false); retry |= issues.Count > 0;
+            if (runtime.Busy) { retry = true; continue; }
+            retry |= !await RunStoreAsync(runtime, "同步桌面入口", store => store.Synchronize());
         }
         if (retry && ++syncRetries <= 3) syncTimer.Start();
     }
@@ -370,6 +363,7 @@ internal sealed partial class StorageWindow : Window
     }
     internal void CreateDrawer(string name)
     {
+        if (closing || exitAfterOperations) throw new InvalidOperationException("正在退出，请等待文件归还完成。");
         var definition = catalog.Create(name); AddRuntime(definition);
         DismissModal();
         SelectDrawer(definition.Id); RecoverDesktop(false); Status($"已创建「{definition.Name}」，可到桌面拖动和调整边缘。");
@@ -407,7 +401,7 @@ internal sealed partial class StorageWindow : Window
     private void LockClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (updating || SelectedRuntime is not { } r) return;
-        var p = r.Row.Store.Profile; p.Locked = LockBox.IsChecked == true; r.Row.Store.Save();
+        var p = r.Row.Store.Profile; p.Locked = LockBox.IsChecked == true; if (!r.Busy) r.Row.Store.Save();
         r.Panel.Configure(r.Definition.Name, p.Width, p.Height, p.Locked);
         r.Row.Refresh(); UpdateDetail(); Status(p.Locked ? "布局已锁定，内容仍可打开和滚动。" : "已解除布局锁定。");
     });
@@ -426,39 +420,38 @@ internal sealed partial class StorageWindow : Window
         if (demo || Selected == null) return;
         var selection = NativeIconLayout.ReadSelection();
         if (selection.Count == 0) { Status("先在真实桌面选择快捷方式，再点击收纳。"); return; }
-        AddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray());
+        QueueAddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray());
     });
-    internal bool AddPaths(string id, IReadOnlyList<string> paths)
+    internal bool QueueAddPaths(string id, IReadOnlyList<string> paths)
     {
-        var r = runtimes[id]; var store = r.Row.Store;
-        if (!r.Panel.IsAttached || r.Definition.Removing) { Status("抽屉尚未就绪，未移动文件。"); return false; }
+        var r = runtimes[id];
+        if (closing || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing) return false;
         catalog.EnsureOwnership(id, paths);
-        var issues = new List<string>(); var count = 0;
-        r.Batching = true;
-        try
+        if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(paths, StringComparer.OrdinalIgnoreCase).Any()))
+        { Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false; }
+        r.PendingPaths = paths.ToArray(); r.Paused = false;
+        _ = Collect(); return true;
+        async Task Collect()
         {
-            foreach (var path in paths)
+            try { await RunStoreAsync(r, "收纳入口", store =>
             {
-                try { store.Add(path); count++; }
-                catch (Exception exception) { issues.Add(Path.GetFileName(path) + "：" + exception.Message); }
-            }
+                var issues = new List<string>();
+                foreach (var path in paths) { try { store.Add(path); } catch (Exception e) { issues.Add(Path.GetFileName(path) + "：" + e.Message); } }
+                return issues;
+            }); }
+            finally { r.PendingPaths = []; }
         }
-        finally { r.Batching = false; RefreshItems(r); }
-        r.Paused = false;
-        Issues(r, issues);
-        if (issues.Count == 0) Status($"已将 {count} 个入口收纳到「{r.Definition.Name}」。");
-        return issues.Count == 0;
     }
     private void RecollectClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         RecoverDesktop(false);
         if (SelectedRuntime is not { } r || !r.Panel.IsAttached || r.Definition.Removing) return;
-        r.Paused = false; Issues(r, r.Row.Store.StartSession()); Status(r.Issue ?? "已按分组重新收纳。");
+        r.Paused = false; _ = RunStoreAsync(r, "重新收纳", store => store.StartSession());
     });
     private void RestoreClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (SelectedRuntime is not { } r) return;
-        r.Paused = true; Issues(r, r.Row.Store.RestoreAll()); Status(r.Issue ?? "已归还此抽屉，分组记忆保留。");
+        r.Paused = true; _ = RunStoreAsync(r, "归还此抽屉", store => store.RestoreAll());
     });
     private void OpenFolderClick(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -471,12 +464,13 @@ internal sealed partial class StorageWindow : Window
         if (Selected is not { } row) return;
         if (MessageBox.Show(this, $"将「{row.Name}」的内容归还桌面并移除抽屉？历史恢复记录会保留。",
             "移除抽屉", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
-        RemoveDrawer(row.Id);
+        _ = RemoveDrawerAsync(row.Id);
     });
-    internal bool RemoveDrawer(string id)
+    private bool RemoveDrawer(string id)
     {
         var r = runtimes[id]; r.Paused = true;
-        var issues = catalog.Remove(id);
+        if (r.Busy) { Status("抽屉仍有文件操作进行中，完成后才能移除。"); return false; }
+        var issues = catalog.CompleteRemoval(id);
         if (issues.Count > 0) { Issues(r, issues); Status("归还未完成，抽屉及恢复记录已保留。"); return false; }
         r.Panel.Dispose(); runtimes.Remove(id); rows.Remove(r.Row);
         SelectDrawer(rows.FirstOrDefault()?.Id ?? ""); RecoverDesktop(false); Status("已归还内容并移除抽屉。");
@@ -501,23 +495,27 @@ internal sealed partial class StorageWindow : Window
     private void ExitClick(object sender, RoutedEventArgs e) => RequestExit();
     private void TrayAction(TrayCommand command) => Try(() =>
     {
+        if (closing && command != TrayCommand.Show) return;
         switch (command)
         {
             case TrayCommand.Show: ShowControl(); break;
+            case TrayCommand.Health: ShowControl(); HealthClick(this, new RoutedEventArgs()); break;
+            case TrayCommand.LocateAll: LocateAllClick(this, new RoutedEventArgs()); break;
             case TrayCommand.Locate: LocateSelected(); break;
             case TrayCommand.Restore:
-                foreach (var r in runtimes.Values) { r.Paused = true; Issues(r, r.Row.Store.RestoreAll()); }
-                Status(runtimes.Values.FirstOrDefault(r => r.Issue != null)?.Issue ?? "全部内容已归还，分组记忆保留。"); break;
+                foreach (var r in runtimes.Values) { r.Paused = true; _ = RunStoreAsync(r, "归还桌面", store => store.RestoreAll()); }
+                break;
             case TrayCommand.Recollect:
                 RecoverDesktop(false);
                 foreach (var r in runtimes.Values.Where(r => r.Panel.IsAttached && !r.Definition.Removing))
-                { r.Paused = false; Issues(r, r.Row.Store.StartSession()); }
+                { r.Paused = false; _ = RunStoreAsync(r, "重新收纳", store => store.StartSession()); }
                 break;
             case TrayCommand.Startup: startup?.SetEnabled(startup.Enabled != true); RefreshStartup(); break;
             case TrayCommand.Exit: RequestExit(); break;
         }
     });
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private bool exitReady, restoringExit;
+    private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (!exitRequested && !sessionEnding)
         {
@@ -525,37 +523,46 @@ internal sealed partial class StorageWindow : Window
             ShowModal(CloseBox);
             return;
         }
-        closing = true; syncTimer.Stop(); desktopTimer.Stop(); environmentTimer.Stop(); guides.Hide();
-        var issues = RestoreEverything();
-        if (issues.Count > 0 && !sessionEnding)
+        if (exitReady || sessionEnding) { DisposeRuntime(); return; }
+        e.Cancel = true;
+        if (restoringExit) return;
+        if (BusyOperations > 0)
         {
-            e.Cancel = true; closing = exitRequested = false;
-            Status(string.Join("；", issues));
-            DismissModal(); Dispatcher.BeginInvoke(() => { if (!closing) ShowControl(); }); desktopTimer.Start(); return;
+            exitAfterOperations = true; Status("正在完成文件操作，完成后自动归还并退出。"); return;
         }
-        DisposeRuntime();
-    }
-    private List<string> RestoreEverything()
-    {
+        restoringExit = closing = true; syncTimer.Stop(); desktopTimer.Stop(); environmentTimer.Stop(); guides.Hide();
         var issues = new List<string>();
-        foreach (var r in runtimes.Values)
+        foreach (var r in runtimes.Values.ToArray())
         {
             r.Paused = true;
-            // One drawer's IO or presentation error must not prevent the others from restoring.
-            try { issues.AddRange(r.Row.Store.RestoreAll().Select(i => r.Definition.Name + "：" + i)); }
-            catch (Exception exception) { issues.Add(r.Definition.Name + "：" + exception.Message); }
+            if (!await RunStoreAsync(r, "退出归还", store => store.RestoreAll(), duringExit: true)) issues.Add(r.Definition.Name + "：" + r.Issue);
         }
-        return issues;
+        restoringExit = false;
+        if (issues.Count > 0)
+        {
+            closing = exitRequested = false;
+            Status(string.Join("；", issues));
+            DismissModal(); ShowControl(); ShowModal(HealthBox); await ScanRecoveryAsync(); desktopTimer.Start(); return;
+        }
+        SamplePerformance(); exitReady = true;
+        _ = Dispatcher.BeginInvoke(Close);
     }
     private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
     {
         sessionEnding = closing = true; syncTimer.Stop(); desktopTimer.Stop(); environmentTimer.Stop();
-        var issues = RestoreEverything();
+        var issues = new List<string>();
+        foreach (var r in runtimes.Values)
+        {
+            try { issues.AddRange(fileWorker.Run(() => r.Row.Store.Detached().RestoreAll()).GetAwaiter().GetResult()); }
+            catch (Exception error) { issues.Add(error.Message); }
+        }
         storage.WriteJson("logs/session-ending.json", new { At = DateTimeOffset.Now, Restored = issues.Count == 0, Issues = issues });
         DisposeRuntime();
     }
     private void DisposeRuntime()
     {
+        if (disposed) return;
+        DisposeHealth();
         watcher?.Dispose(); foreach (var r in runtimes.Values) r.Panel.Dispose();
         guides.Dispose(); tray?.Dispose(); Application.Current.SessionEnding -= OnSessionEnding;
     }
@@ -565,7 +572,8 @@ internal sealed partial class StorageWindow : Window
         public DrawerRow Row { get; } = row;
         public ShortcutPanel Panel { get; } = panel;
         public LayoutSnapSession Snap { get; set; } = new();
-        public bool Started, Paused, Batching;
+        public bool Started, Paused, Busy;
+        public IReadOnlyList<string> PendingPaths = [];
         public string? Issue, ItemsSignature;
     }
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);

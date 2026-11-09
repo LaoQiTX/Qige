@@ -39,7 +39,7 @@ internal sealed class ShortcutStore
     private readonly string desktop;
     private readonly string profileRelative;
     private readonly string storeRelative;
-    public ShortcutProfile Profile { get; }
+    public ShortcutProfile Profile { get; private set; }
     public IReadOnlyList<StoredShortcut> Active => Profile.Entries.Where(entry => (entry.Phase is "Stored" or "Updating") && File.Exists(StoredPath(entry))).ToArray();
     public string DesktopPath => desktop;
     public event Action? Changed;
@@ -75,6 +75,23 @@ internal sealed class ShortcutStore
         catch (ArgumentException) { return false; }
     }
     public void Save() => storage.WriteJson(profileRelative, Profile);
+
+    // The worker uses a separate model. Publishing the result happens on the dispatcher.
+    internal ShortcutStore Detached() => new(storage, desktop, profileRelative, storeRelative);
+    internal void Publish(ShortcutProfile result)
+    {
+        result.X = Profile.X; result.Y = Profile.Y; result.Width = Profile.Width; result.Height = Profile.Height;
+        result.Folded = Profile.Folded; result.Locked = Profile.Locked;
+        Profile = result; Save(); Changed?.Invoke();
+    }
+    internal void RetryEntry(string id, bool restore)
+    {
+        var entry = Profile.Entries.Single(e => e.Id == id);
+        if (restore || entry.RemoveAfterRestore || entry.Phase == "Restoring")
+        { RestoreEntry(entry); if (entry.RemoveAfterRestore) ForgetRestored(entry); }
+        else { ResolvePending(entry); Collect(entry); }
+        Changed?.Invoke();
+    }
 
     public void Add(string path, IconPlacement? position = null)
     {

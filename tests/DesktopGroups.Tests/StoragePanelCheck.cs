@@ -119,6 +119,30 @@ internal static class StoragePanelCheck
             using (var ghost = new IconDragGhost(ShortcutInfo.LoadIcon(store.StoredPath(store.Active[0])), new NativeDesktop.Point { X = 800, Y = 240 }))
                 ghost.Move(new NativeDesktop.Point { X = 820, Y = 260 });
             timings.Sort();
+            // The production receiver queues its own move. The Shell must never delete
+            // the source while that queue is still waiting, including on transfer failure.
+            var queuedPath = Path.Combine(store.DesktopPath, "后台拖入.url");
+            File.WriteAllText(queuedPath, "[InternetShortcut]\r\nURL=https://example.com/queued-drop\r\n");
+            using (var queue = new StaWorkQueue("queued OLE check"))
+            using (var release = new ManualResetEventSlim())
+            using (var queuedData = new ShellSampleData(queuedPath))
+            {
+                Task<bool>? work = null;
+                var queuedTarget = new PanelDropTarget(store.CanAccept, paths =>
+                {
+                    work = queue.Run(() => { release.Wait(TimeSpan.FromSeconds(5)); return File.Exists(paths[0]); });
+                    return true;
+                }, (_, _) => { }, errors.Add);
+                uint queuedEffect = 2;
+                queuedTarget.DragEnter(queuedData.Data, 0, default, ref queuedEffect);
+                queuedEffect = 2; queuedTarget.Drop(queuedData.Data, 0, default, ref queuedEffect);
+                if (queuedEffect != 2 || !File.Exists(queuedPath) || ReadEffect(queuedData.Data, "Performed DropEffect") != 0
+                    || ReadEffect(queuedData.Data, "Logical Performed DropEffect") != 2 || work?.IsCompleted != false)
+                    throw new InvalidOperationException("后台排队前的 OLE 回执未保护源文件。");
+                release.Set();
+                if (!await work!) throw new InvalidOperationException("后台操作开始前源文件丢失。");
+                File.Delete(queuedPath);
+            }
             storage.WriteJson("checks/StoragePanel/results.json", new
             {
                 Samples = 120, panel.MoveCount, SurfaceRebuildsDuringMove = moveRebuilds,
@@ -132,6 +156,7 @@ internal static class StoragePanelCheck
                 VisualDesktopAccepted = false, RealDesktopFilesMoved = false
             });
             Console.WriteLine($"PASS 120 single-surface moves; no bitmap rebuilds or Shell icon reposition; icon alpha255 and body alpha225; move API p95 {timings[(int)(timings.Count * .95)]:F3}ms");
+            Console.WriteLine("PASS queued OLE receiver reports no Shell source deletion while background work is pending");
             Console.WriteLine("PASS immediate-start animated expansion/collapse using cached pixels; independent hover/selection; OLE drag-enter expansion and sample drop; source deletion receipt; unsupported files rejected");
         }
         finally

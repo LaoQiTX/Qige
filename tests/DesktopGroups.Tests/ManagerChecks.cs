@@ -39,6 +39,7 @@ internal static class ManagerChecks
                 window = new StorageWindow(storage, demo: true);
                 window.Show();
                 await Task.Delay(500);
+                await window.WaitForIdleAsync();
                 Check(window.Panels.Count == 2 && window.Panels.All(p => p.IsAttached), "manager attaches both independent demo drawers");
                 var canvasList = (ListBox)window.FindName("CanvasDrawerList");
                 var drawerList = (ListBox)window.FindName("DrawerList");
@@ -97,6 +98,7 @@ internal static class ManagerChecks
                     "native folding synchronizes the visible behavior segments");
                 first.SetFolded(false);
                 window.CreateDrawer("阅读与资料");
+                await window.WaitForIdleAsync();
                 Check(window.Panels.Count == 3 && window.Catalog.Settings.Drawers.Any(d => d.Name == "阅读与资料"), "manager creates and selects an independent third drawer");
                 var added = window.Catalog.Settings.Drawers.Single(d => d.Name == "阅读与资料");
                 var batchStore = window.Catalog.Stores[added.Id];
@@ -104,8 +106,14 @@ internal static class ManagerChecks
                 var batchPaths = Enumerable.Range(0, 24).Select(i => Path.Combine(batchStore.DesktopPath, $"批量入口 {i}.url")).ToArray();
                 foreach (var path in batchPaths) File.WriteAllText(path, "[InternetShortcut]\r\nURL=https://example.com/batch\r\n");
                 var builds = batchPanel.SurfaceBuilds;
-                Check(window.AddPaths(added.Id, batchPaths) && batchStore.Active.Count == 24 && batchPanel.SurfaceBuilds - builds == 1,
-                    "collecting 24 items refreshes panel icons and surface once after the verified transfers: " + ((TextBlock)window.FindName("StatusLabel")).Text);
+                Check(window.QueueAddPaths(added.Id, batchPaths) && window.BusyOperations == 1,
+                    "24-item collection enters the background queue without blocking the dispatcher");
+                batchPanel.ApplyScreenLayout(200, 180, 510, 352);
+                await window.WaitForIdleAsync();
+                Check(batchStore.Active.Count == 24 && batchPanel.SurfaceBuilds - builds < 12,
+                    $"batch collection plus layout change uses bounded surface rebuilds ({batchPanel.SurfaceBuilds - builds}) rather than a rebuild per item; active={batchStore.Active.Count}");
+                Check(batchStore.Detached().Profile.Width == batchStore.Profile.Width && batchStore.Profile.Width == batchPanel.LogicalWidth,
+                    "layout edits during collection survive worker publication and persist on disk");
                 window.SetManagerMode(true); window.UpdateLayout();
                 var studioContents = (ItemsControl)window.FindName("StudioContentsList");
                 var returnButton = Descendants(studioContents).OfType<Button>().First(b => Equals(b.Content, "归还"));
@@ -113,14 +121,29 @@ internal static class ManagerChecks
                 var collision = "[InternetShortcut]\r\nURL=https://example.com/existing\r\n";
                 File.WriteAllText(item.OriginalPath, collision);
                 returnButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await window.WaitForIdleAsync();
                 Check(File.ReadAllText(item.OriginalPath) == collision && File.Exists(item.Path) && batchStore.Profile.Entries.Count == 24,
                     "single-item return protects an existing desktop file and retains recovery membership on conflict");
+                await window.ScanRecoveryAsync();
+                var recovery = window.RecoveryProblems.Single(p => p.OriginalPath == item.OriginalPath);
+                Check(recovery.StoredPath == item.Path && recovery.EntryId == item.Id,
+                    "recovery center identifies the exact conflicting entry and both locations");
+                ((Button)window.FindName("HealthButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await window.WaitForIdleAsync(); window.UpdateLayout();
+                SaveManagerPreview(window, storage.Resolve("manager-health-preview.png"));
+                window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
+                SaveManagerPreview(window, storage.Resolve("manager-health-minimum.png"));
+                var dismissHealth = Descendants((DependencyObject)window.FindName("HealthBox")).OfType<Button>().First(b => Equals(b.Content, "关闭"));
+                dismissHealth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                window.Width = 1200; window.Height = 780;
                 File.Delete(item.OriginalPath);
-                returnButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await window.RetryProblemAsync(recovery);
+                await window.WaitForIdleAsync();
                 Check(File.Exists(item.OriginalPath) && !File.Exists(item.Path) && batchStore.Profile.Entries.Count == 23,
-                    "single-item return restores the file and removes only its membership");
+                    "recovery center retry restores the file and removes only its pending ungroup membership");
+                Check(!window.RecoveryProblems.Any(p => p.EntryId == item.Id), "resolved conflict disappears from the recovery center");
                 window.SetManagerMode(false);
-                Check(window.RemoveDrawer(added.Id) && window.Panels.Count == 2, "manager removes a drawer after successful restoration");
+                Check(await window.RemoveDrawerAsync(added.Id) && window.Panels.Count == 2, "manager removes a drawer after background restoration");
                 first.Configure("常用", 420, 352, false);
                 first.ApplyScreenLayout(180, 160, 420, 352);
                 first.ScrollBy(-10000);
@@ -159,6 +182,20 @@ internal static class ManagerChecks
                 keepRunning.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(!window.IsVisible && window.TrayAvailable && window.Panels.All(p => p.IsAttached),
                     "closing the demo to the tray hides its taskbar window while keeping a registered tray icon and attached drawers");
+                var baseline = new PerformanceRecorder();
+                for (var i = 0; i < 6; i++)
+                {
+                    var delay = System.Diagnostics.Stopwatch.StartNew();
+                    await Task.Delay(5000);
+                    baseline.Sample(Math.Max(0, delay.Elapsed.TotalMilliseconds - 5000), window.IsVisible, false);
+                }
+                storage.WriteJson("manager-idle-baseline.json", new
+                {
+                    Scope = "30-second isolated manager harness, hidden manager, 2 drawers and 18 sample shortcuts; not the release executable or an overnight soak",
+                    Measurements = baseline.Snapshot(new { Source = "See each demo data logs/performance-current.json" }, new { Count = window.Panels.Count })
+                });
+                Check(window.Panels.All(p => p.IsAttached) && baseline.SampleCount == 6,
+                    "30-second hidden-manager baseline retains both attached drawers and records six process samples");
                 window.ShowControl();
                 Check(window.IsVisible && ((TextBlock)window.FindName("SelectedTitle")).Text == "常用",
                     "reopening the manager preserves its drawer selection");
@@ -170,14 +207,18 @@ internal static class ManagerChecks
                 var closingEntry = closingStore.Active.First();
                 File.WriteAllText(closingEntry.OriginalPath, "existing desktop entry");
                 window.RequestExit();
-                await Task.Delay(100);
+                await window.WaitForIdleAsync();
                 Check(window.IsVisible && File.ReadAllText(closingEntry.OriginalPath) == "existing desktop entry"
                     && File.Exists(closingStore.StoredPath(closingEntry)),
                     "exit with a return conflict cancels closing, preserves both files, and keeps the manager accessible");
                 File.Delete(closingEntry.OriginalPath);
                 var stores = window.Catalog.Stores.Values.ToArray();
+                var pendingPath = Path.Combine(closingStore.DesktopPath, "退出等待.url");
+                File.WriteAllText(pendingPath, "[InternetShortcut]\r\nURL=https://example.com/exit-wait\r\n");
+                Check(window.QueueAddPaths("default", [pendingPath]) && window.BusyOperations == 1, "exit test begins with a pending background collection");
                 window.RequestExit();
-                Check(!window.IsVisible && stores.All(s => s.Profile.Entries.All(e =>
+                await window.WaitForIdleAsync();
+                Check(!window.IsVisible && File.Exists(pendingPath) && stores.All(s => s.Profile.Entries.All(e =>
                     File.Exists(e.OriginalPath) && !File.Exists(s.StoredPath(e)))),
                     "closing the demo restores every drawer's sample files before disposal: " + ((System.Windows.Controls.TextBlock)window.FindName("StatusLabel")).Text);
                 window = null;
@@ -186,7 +227,12 @@ internal static class ManagerChecks
                 Console.WriteLine("Preview: " + output);
                 app.Shutdown(0);
             }
-            catch (Exception exception) { Console.Error.WriteLine(exception); window?.RequestExit(); app.Shutdown(1); }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine(exception);
+                if (window != null) { window.RequestExit(); try { await window.WaitForIdleAsync(); } catch (Exception cleanup) { Console.Error.WriteLine(cleanup.Message); } }
+                app.Shutdown(1);
+            }
         }));
         return app.Run();
     }

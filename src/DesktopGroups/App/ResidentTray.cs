@@ -7,7 +7,7 @@ using System.Windows.Media.Imaging;
 
 namespace DesktopGroups;
 
-internal enum TrayCommand { Show = 1, Locate, Restore, Recollect, Startup, Exit }
+internal enum TrayCommand { Show = 1, Locate, Restore, Recollect, Startup, Exit, Health, LocateAll }
 
 internal sealed class ResidentTray : IDisposable
 {
@@ -63,7 +63,7 @@ internal sealed class ResidentTray : IDisposable
             Available = false; EnsureAvailable(); EnvironmentChanged?.Invoke("Explorer 重建");
         }
         else if (message is 0x7E or 0x1A or 0x2E0) EnvironmentChanged?.Invoke("显示设置变化");
-        else if (message == 0x218 && wParam.ToInt64() is 7 or 18) EnvironmentChanged?.Invoke("休眠唤醒");
+        else if (message == 0x218 && wParam.ToInt64() is 6 or 7 or 18) EnvironmentChanged?.Invoke("休眠唤醒");
         else if (message == 0x2B1 && wParam.ToInt64() == 8) EnvironmentChanged?.Invoke("解锁桌面");
         else if ((uint)message == Callback)
         {
@@ -83,6 +83,8 @@ internal sealed class ResidentTray : IDisposable
         {
             AppendMenu(menu, 0, (nuint)TrayCommand.Show, "打开管理面板");
             AppendMenu(menu, 0, (nuint)TrayCommand.Locate, "找回分区");
+            AppendMenu(menu, 0, (nuint)TrayCommand.LocateAll, "定位全部抽屉");
+            AppendMenu(menu, 0, (nuint)TrayCommand.Health, "运行与恢复");
             AppendMenu(menu, 0x800, 0, null);
             AppendMenu(menu, 0, (nuint)TrayCommand.Restore, "全部归还桌面");
             AppendMenu(menu, 0, (nuint)TrayCommand.Recollect, "按分组重新收纳");

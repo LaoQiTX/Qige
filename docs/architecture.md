@@ -30,6 +30,16 @@
 
 布局位置使用屏幕物理坐标，尺寸使用 DIP，恢复时按目标显示器 DPI 换算并约束到工作区。`LayoutSnapSession` 为每次手势保存吸附参考，进入 10 DIP、脱离 18 DIP；辅助线只在布局手势期间显示，Alt 或关闭开关立即清除吸附状态。
 
+## 后台处理与运行恢复
+
+`StorageWindow.Health` 集中协调后台任务、恢复列表与性能信息。`StaWorkQueue` 串行执行脱离 UI 模型的文件操作，`ShortcutStore.Publish` 在 UI 线程发布结果并保留期间的布局修改；退出等待任务完成后归还，冲突会阻止退出并打开恢复入口。移除先后台归还，`DrawerCatalog.CompleteRemoval` 验证完成状态后归档元数据，避免重复执行整组文件操作。
+
+`AsyncIconCache` 在独立 STA 上解析 Shell 图标，冻结位图后供 WPF 与原生抽屉共享；合并并发请求、FIFO 限制 256 项，`ItemsSignature` 阻止过期加载覆盖当前列表。抽屉仍在 UI 线程用准备好的图标绘制。
+
+`DesktopRecoveryPolicy` 合并环境事件并安排退避，2 秒看门狗检查连接及显示器拓扑。自动重排期间不持久化临时回收坐标，保存的首选布局可以在原显示器接回后恢复。桌面监听会重建并配合低频完整同步。
+
+`RecoveryInspection` 对独立存储快照做只读检查，向运行面板提供文件阶段、错误及两处路径。`PerformanceRecorder` 采样进程与 UI 调度数据并限制保留数量；口径和实机边界详见 [P0 实现与验收](p0-validation.md)。
+
 ## beta.1 迁移
 
 取得新数据根会话锁后、打开分组前：

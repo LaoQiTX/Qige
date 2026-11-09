@@ -26,7 +26,7 @@ internal static class ResidentChecks
             if (!result) throw new InvalidOperationException(label);
             results.Add("PASS " + label);
         }
-        var executable = Path.GetFullPath(Path.Combine(storage.InstallDirectory, "DesktopGroups.exe"));
+        var executable = Path.GetFullPath(Path.Combine(storage.InstallDirectory, "Qige.exe"));
         var values = new MemoryStartup();
         var startup = new StartupRegistration(storage, executable, values);
         Check(!startup.Enabled && values.Value == null, "startup stays disabled until explicitly enabled");
@@ -46,9 +46,20 @@ internal static class ResidentChecks
         Check(escaped, "startup rejects executables outside the project");
 
         values.Entries.Clear();
+        var oldExecutable = Path.Combine(storage.InstallDirectory, "DesktopGroups.exe");
+        values.Entries[startup.ValueName] = $"\"{oldExecutable}\" --data-dir \"{storage.Root}\" --background";
+        startup.UpgradeLegacyRegistration(storage);
+        Check(startup.Enabled && values.Read(startup.ValueName) == startup.Command, "startup follows the renamed Qige executable without changing its data path");
+        startup.UpgradeLegacyRegistration(storage);
+        Check(startup.Enabled, "renamed startup upgrade is idempotent");
+        values.Entries.Clear();
+        values.Entries[startup.ValueName] = "manually modified startup";
+        startup.UpgradeLegacyRegistration(storage);
+        Check(values.Read(startup.ValueName) == "manually modified startup", "renamed startup upgrade preserves a modified command");
+        values.Entries.Clear();
         var oldRoot = storage.Resolve("legacy-install");
         var oldName = "DesktopGroups-" + StartupRegistration.ProjectId(oldRoot);
-        values.Entries[oldName] = $"\"{AppLaunch.Executable}\" --root \"{oldRoot}\" --background";
+        values.Entries[oldName] = $"\"{oldExecutable}\" --root \"{oldRoot}\" --background";
         startup.UpgradeLegacyRegistration(new AppStorage(storage.Root, storage.InstallDirectory, oldRoot));
         Check(values.Read(startup.ValueName) == startup.Command && values.Read(oldName) == null, "exact legacy startup registration upgrades to the new data path");
         values.Entries.Clear();
@@ -56,7 +67,7 @@ internal static class ResidentChecks
         startup.UpgradeLegacyRegistration(new AppStorage(storage.Root, storage.InstallDirectory, oldRoot));
         Check(values.Read(oldName) == "manually modified startup" && values.Read(startup.ValueName) == null, "modified legacy startup command is preserved");
         values.Entries.Clear();
-        values.Entries[oldName] = $"\"{AppLaunch.Executable}\" --root \"{oldRoot}\" --background";
+        values.Entries[oldName] = $"\"{oldExecutable}\" --root \"{oldRoot}\" --background";
         values.Entries[startup.ValueName] = "other new command";
         var upgradeConflict = false;
         try { startup.UpgradeLegacyRegistration(new AppStorage(storage.Root, storage.InstallDirectory, oldRoot)); }
@@ -112,7 +123,9 @@ internal static class ResidentChecks
             await Task.Delay(40);
             Check(!panel.IsAttached, "destroying the parent invalidates the native surface");
             host = Host(); panel.EnsureAttached(true);
-            Check(panel.IsAttached && panel.AttachmentCount == 2 && panel.IsFolded && panel.Height == 46,
+            var restoredPlacement = DesktopPlacement.Resolve(panel.X, panel.Y, panel.LogicalWidth, panel.LogicalHeight,
+                DesktopPlacement.Capture(), folded: true);
+            Check(panel.IsAttached && panel.AttachmentCount == 2 && panel.IsFolded && panel.Height == (int)Math.Round(46 * restoredPlacement.Dpi / 96d),
                 "a replacement parent recreates the surface and preserves folded state");
             Check(panel.DropTarget != null, "OLE drop target is registered again after surface recovery");
             Check(File.Exists(stored) && !File.Exists(original) && VerifiedTransfer.Hash(stored) == hash && store.Active.Count == 1,
@@ -120,6 +133,15 @@ internal static class ResidentChecks
             var count = panel.SurfaceBuilds;
             for (var i = 0; i < 30; i++) panel.EnsureAttached();
             Check(panel.SurfaceBuilds == count && panel.AttachmentCount == 2, "healthy watchdog checks do not rebuild or reattach the surface");
+            for (var i = 0; i < 20; i++)
+            {
+                host.Dispose(); host = null;
+                Check(!panel.IsAttached, "stress host loss " + (i + 1));
+                host = Host(); panel.EnsureAttached(true);
+            }
+            Check(panel.AttachmentCount == 22 && panel.IsAttached && panel.IsFolded && panel.DropTarget != null
+                && VerifiedTransfer.Hash(stored) == hash && store.Active.Count == 1,
+                "20 desktop-host replacements preserve folding, OLE, original bytes and membership");
         }
         finally
         {
@@ -144,6 +166,14 @@ internal static class ResidentChecks
             await Task.Delay(100);
             Check(eventReceived && tray.Available && tray.RegistrationCount > previous,
                 "a taskbar-created notification restores this process tray registration");
+            var events = new List<string>();
+            tray.EnvironmentChanged += events.Add;
+            PostMessage(tray.Handle, 0x7E, 0, 0);
+            PostMessage(tray.Handle, 0x218, 18, 0);
+            PostMessage(tray.Handle, 0x2B1, 8, 0);
+            await Task.Delay(100);
+            Check(events.Contains("显示设置变化") && events.Contains("休眠唤醒") && events.Contains("解锁桌面"),
+                "display, power-resume and unlock notifications reach the recovery coordinator");
         }
 
         storage.WriteJson("checks/Resident/latest.json", new

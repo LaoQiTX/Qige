@@ -91,6 +91,15 @@ internal sealed class DrawerCatalog
         Save(); // An interrupted remove must restore, never recollect.
         var issues = Stores[id].RestoreAll();
         if (issues.Count > 0) return issues;
+        return CompleteRemoval(id);
+    }
+    internal IReadOnlyList<string> CompleteRemoval(string id)
+    {
+        var drawer = Find(id);
+        if (!drawer.Removing) return ["移除操作尚未开始。"];
+        if (Stores[id].Profile.Entries.Any(e => e.Phase != "Restored" || e.PendingRelative != null
+            || File.Exists(Stores[id].StoredPath(e)) || !File.Exists(e.OriginalPath)))
+            return ["文件归还尚未确认，抽屉和恢复记录已保留。"];
         // Archive membership, receipts and old versions; removing a view never destroys recovery history.
         storage.WriteJson($"recovery/removed-drawers/{id}.json", new { RemovedAt = DateTimeOffset.Now, Drawer = drawer, Profile = Stores[id].Profile });
         Settings.Drawers.Remove(drawer);
