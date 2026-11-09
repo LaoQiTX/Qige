@@ -1,83 +1,113 @@
-# 栖格 Qige
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/qige-app-dark.svg">
+    <img src="assets/brand/qige-app.svg" width="96" height="96" alt="栖格 Qige 应用图标">
+  </picture>
+</p>
 
-**给桌面留点空。** 面向 Windows 11 的轻量桌面分区整理工具。
+<h1 align="center">栖格 Qige</h1>
 
-![栖格品牌设计](assets/brand/qige-brand-preview.png)
+<p align="center">
+  <strong>给桌面留点空。</strong><br>
+  用桌面抽屉整理快捷方式，让常用入口各归其位。
+</p>
 
-当前版本为 **[v0.1.0-beta.8](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8)**，小范围测试阶段。提供中文安装包和便携 ZIP，新增桌面恢复调度、“运行与恢复”面板和本机性能记录；收纳及 Shell 图标解析转到后台。[运行效果与发布说明](docs/releases/v0.1.0-beta.8.md) · [实现与验收边界](docs/p0-validation.md) · [更新记录](CHANGELOG.md)。
+<p align="center">
+  <a href="https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8">下载 beta.8</a> ·
+  <a href="docs/user-guide.md">使用指南</a> ·
+  <a href="docs/README.md">项目文档</a> ·
+  <a href="docs/roadmap.md">开发计划</a> ·
+  <a href="https://github.com/LaoQiTX/Qige/issues">反馈问题</a>
+</p>
 
-## 使用
+<p align="center">Windows 11 x64 · 安装包 / 便携版 · 中文界面</p>
 
-运行安装包，在向导中选择可写的安装目录，然后从开始菜单启动栖格。安装器自带 .NET 运行时，无需另装环境。收纳的文件、桌面快捷方式和配置位于所选目录内的 `QigeData`，开始菜单也提供“栖格的数据文件夹”入口；升级和卸载均保留此目录。
+## 看看栖格
 
-也可将便携 ZIP 完整解压到固定、可写目录，双击 `Qige.exe`。首次可用“打开样例.cmd”体验，随后少量收纳真实桌面快捷方式。详见[使用说明](docs/user-guide.md)。历史 beta.7 及更早发布包的入口名为 `DesktopGroups.exe`；beta.8 起使用新名称。
+把快捷方式拖进抽屉，按工作、娱乐或自己的习惯分组。抽屉可以自由摆放、调整大小、吸附对齐，也能折叠成标题条，在鼠标移入时展开。
 
-目前支持多个桌面整理抽屉，管理面板可新建、重命名、定位和安全移除抽屉，分别记忆位置、尺寸、折叠和锁定状态。支持边缘调整大小、自动排布与滚动、屏幕及相邻抽屉的边缘／中心吸附，按住 Alt 可临时绕过吸附。
+**桌面抽屉**
 
-支持个人桌面 `.lnk` / `.url`，已取消原有 12 项限制。保留整组移动、悬停折叠动画、图标高亮、拖回桌面解除分组、同目标快捷方式重建同步、托盘常驻和可选开机启动。正式模式与隔离样例关闭面板后均可收起到托盘；“退出并归还全部”真正退出，并归还全部抽屉内容。
+<p align="center">
+  <img src="docs/images/drawer.png" width="526" alt="栖格桌面抽屉，展示图标排布、选中和悬停反馈">
+</p>
 
-文件夹映射抽屉、普通文件／文件夹、公共桌面入口、原生右键菜单和全桌面双击隐藏仍在后续规划中。真实 Explorer 重启、休眠、双屏插拔、混合 DPI 和长期共存仍需进一步验收。
+**管理面板 · 空间沙盘**
 
-## 数据存放
+![栖格管理面板的空间沙盘，集中查看和管理桌面抽屉](docs/images/manager-canvas.png)
 
-程序首次运行在 **exe 所在目录**创建唯一的数据目录 `QigeData`，与源码工作目录无关：
+<details>
+<summary>查看工作台详情与运行恢复面板</summary>
 
-```text
-安装目录/
-├── Qige.exe
-├── …运行时文件
-├── 使用说明.md
-└── QigeData/
-    ├── config/       分区、成员与布局设置
-    ├── storage/      已收纳快捷方式及历史版本
-    ├── recovery/     会话锁、迁移及旧布局恢复依据
-    ├── logs/         诊断记录
-    ├── cache/temp/   程序临时文件
-    └── samples/      样例数据
-```
+<br>
 
-目录按需生成。快捷方式会**实际移动**，正常退出归还；异常退出后请从同一目录重启恢复。更新时先退出并归还，只替换程序文件，保留 `QigeData`。不覆盖冲突文件，不自动清理历史版本。
+**工作台详情** — 搜索入口、查看抽屉内容，调整名称、布局与展开方式。
 
-beta.1 用户在原可写目录放入新版程序后，首次运行会迁移原 `Data` / `Storage`，保留原配置备份及迁移记录；请勿再同时启动旧版。数据目录不可写时显示错误，不改用 C 盘或 AppData。不建议安装到需要管理员权限才能写入的 Program Files。
+![栖格管理面板的工作台详情](docs/images/manager-studio.png)
 
-开发脚本使用项目内 `.local/QigeData`；测试、诊断分别使用 `.build` 下的隔离目录。程序可用绝对路径参数 `--data-dir` 指定开发数据位置。开机启动默认关闭，启用时登记当前用户启动项；Windows 自身的缓存和日志由系统管理。
+**运行与恢复** — 查看连接与性能信息，定位冲突文件并重试归还。
 
-## 开发与项目结构
+![栖格运行与恢复面板的冲突处理示例](docs/images/recovery.png)
 
-C# / .NET 10、WPF 离屏绘制、Win32 分层桌面窗口、Windows Shell，无第三方 NuGet 业务依赖。在现有 PowerShell 7 中使用 .NET 10 SDK；构建脚本将可控缓存与临时文件定向到项目内。
+</details>
 
-```text
-src/DesktopGroups/           正式应用：App / Desktop / Panels / Shell / Storage
-tests/DesktopGroups.Tests/  隔离回归检查，不随正式程序发布
-tools/DesktopGroups.Diagnostics/  桌面诊断与历史原型，不随正式程序发布
-assets/brand/               品牌 SVG、应用 ICO、设计预览
-scripts/                    构建、发布、品牌导出脚本
-installer/                  安装向导、升级与卸载保护
-docs/                       当前说明、架构、历史设计与发布记录
-.github/                    问题模板与 Windows 构建检查
-Qige.slnx                   解决方案
-.local/                     本机开发数据及归档（不提交）
-.build/                     SDK 缓存、测试结果、临时输出（不提交）
-artifacts/                  发布包与品牌导出（不提交）
-```
+以上为当前版本的隔离样例截图。文件夹和文档图标是指向样例目标的快捷方式；普通文件与文件夹收纳尚未开放。
+
+## 能做什么
+
+- **多个桌面抽屉**：分别命名、移动、调整尺寸、滚动查看，并记住各自的布局。
+- **随手整理**：拖入个人桌面快捷方式；单击选中、双击打开，拖回桌面解除分组。
+- **悬停展开**：折叠时保留标题条，移入展开、离开收起；拖入时也能展开。
+- **吸附与对齐**：对齐屏幕及相邻抽屉的边缘、中心线，按住 Alt 临时自由移动。
+- **快捷方式同步**：识别软件更新后重建的同一入口，保留历史副本；无法可靠识别时提示处理。
+- **托盘常驻**：关闭管理面板后继续运行，可选择登录 Windows 后启动。
+- **集中恢复**：查看冲突位置、重试或另存副本；退出时等待文件操作并归还内容。
+- **后台处理**：文件操作和图标解析在后台执行，提供本机性能记录。
+
+当前为测试版，支持**个人桌面根目录的 `.lnk` / `.url`**。文件夹映射、普通文件收纳和全桌面双击隐藏仍在[开发计划](docs/roadmap.md)中。
+
+## 下载与开始使用
+
+从 **[GitHub Releases](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8)** 下载 Windows x64 版本：
+
+| 版本 | 使用方式 |
+| --- | --- |
+| 安装包 `Qige-…-setup-win-x64.exe` | 通过中文向导选择可写目录，从开始菜单启动 |
+| 便携包 `Qige-…-win-x64.zip` | 完整解压到固定、可写目录，运行 `Qige.exe` |
+
+两种版本均自带 .NET 运行时。首次可运行“打开样例.cmd”体验界面，再开始整理自己的桌面。
+
+1. 在管理面板中新建并命名抽屉。
+2. 将个人桌面的快捷方式拖入抽屉。
+3. 拖动标题或边缘调整布局，按需开启悬停展开。
+4. 关闭面板后由托盘继续运行；完全退出时选择“退出并归还全部”。
+
+**文件会实际收纳到软件目录内的 `QigeData`，正常退出后归还桌面。** 更新前先退出并归还，保留整个数据目录。更多说明见[使用指南](docs/user-guide.md)和[问题排查](docs/troubleshooting.md)。
+
+## 文档
+
+| 我想了解… | 文档 |
+| --- | --- |
+| 安装、整理桌面、管理抽屉 | [使用指南](docs/user-guide.md) |
+| 冲突、找不到抽屉、恢复文件 | [问题排查](docs/troubleshooting.md) |
+| 功能边界与两类抽屉的规划 | [产品规格](docs/product-spec.md) |
+| 后续开发顺序 | [开发计划](docs/roadmap.md) |
+| 技术原理、构建与发布 | [架构](docs/architecture.md) · [开发](docs/development.md) · [分发](docs/distribution.md) |
+| 界面、图标与验证情况 | [设计](docs/design.md) · [验证](docs/validation.md) |
+
+## 从源码运行
+
+采用 C# / .NET 10、WPF、Win32 和 Windows Shell。需要 Windows 11 x64、PowerShell 7 和 .NET 10 SDK。
 
 ```powershell
-.\build.ps1                         # 编译完整解决方案
-.\build.ps1 -Task Test              # 数据目录、迁移、收纳与冲突恢复
-.\build.ps1 -Task Demo              # 本机隔离样例
-.\build.ps1 -Task Run               # 使用 .local/QigeData 的真实桌面模式
-.\build.ps1 -Task ResidentTest      # 托盘、单实例及模拟桌面恢复
-.\build.ps1 -Task LayoutTest        # 多抽屉、恢复与布局吸附
-.\build.ps1 -Task ManagerTest       # 隔离管理面板和预览导出
-.\build.ps1 -Task StorageRenderTest # 面板、动画、OLE 与 120 次移动
-.\build.ps1 -Task IconTest          # 快捷方式图标解析
-.\publish.ps1                      # 自带运行时的 win-x64 ZIP 和 SHA256
-.\publish.ps1 -Installer           # 同时生成中文安装 EXE（需要 Inno Setup）
-pwsh -STA -File scripts/build-brand.ps1 # 导出到 artifacts/brand
+.\build.ps1 -Configuration Release
+.\build.ps1 -Task Demo -Configuration Release
 ```
 
-桌面相关检查需在已登录的 Windows 桌面会话运行；CI 只运行不依赖交互桌面的数据检查。ZIP 输出在 `artifacts/releases`，安装包在 `artifacts/installers`，均附 SHA256。仅打包正式应用和指定用户文档，不含个人数据、测试工具或开发缓存。安装包构建及方案说明见[分发方案](docs/distribution.md)。
+开发数据、缓存和测试输出留在项目目录。完整命令见[开发说明](docs/development.md)。
 
-[抽屉产品规划](docs/drawer-types.md) · [后续规划](docs/roadmap.md) · [开发说明](docs/development.md) · [当前架构](docs/architecture.md) · [管理面板设计](docs/management-panel.md) · [品牌说明](docs/brand.md) · [历史文档](docs/history/README.md)
+## 反馈
 
-反馈请通过 Issues 提供复现步骤与系统环境。诊断含本机路径等信息，分享前先脱敏；不要上传个人快捷方式、整个 `QigeData` 或历史数据目录。本项目自行实现，不包含 Fences 的代码或资源。
+请通过 [Issues](https://github.com/LaoQiTX/Qige/issues) 提供复现步骤、软件版本、Windows 版本和显示器缩放设置。分享日志前先处理其中的本机路径，不要上传个人快捷方式或整个数据目录。
+
+栖格自行实现桌面整理功能，不包含 Fences 的代码或资源。

@@ -1,41 +1,78 @@
 # 开发说明
 
-需要 Windows 11 x64、现有 PowerShell 7 和 .NET 10 SDK，版本见 `global.json`。脚本使用现有 SDK，不安装新环境。`NuGet.Config` 默认无网络包源；首次自带运行时发布仅显式使用微软 NuGet 源获取运行时。
+## 环境
 
-## 构建与检查
+- Windows 11 x64，桌面交互检查需要已登录的图形会话。
+- PowerShell 7。
+- .NET 10 SDK，版本由根目录 `global.json` 指定。
+- 编译安装包时使用 Inno Setup；应用本身不依赖它。
 
-根目录 `build.ps1` / `publish.ps1` 是稳定入口，实现位于 `scripts`。统一环境设置在 `scripts/ProjectEnvironment.ps1`，执行结束恢复调用进程环境。缓存、TEMP/TMP、NuGet、MSBuild 日志定向到 `.build`，标准 bin/obj 留在各项目目录并忽略提交。
+业务代码无第三方 NuGet 包依赖。`NuGet.Config` 默认无网络源，自带运行时发布按需从微软源获取运行时。构建脚本使用已有 SDK，不安装新环境。
 
-- `-Task Test`：路径、旧数据迁移、收纳恢复、多抽屉和布局计算；每次创建独立的 `.build/test-results/runs/<id>`。
-- `-Task SelfTest`：数据目录与迁移；包括活动入口、NTFS 下载来源流、配置备份、幂等、中断和冲突。
-- `-Task StorageTest`：收纳、同步、拖回、冲突和中断恢复，不移动真实桌面文件。
-- `-Task LayoutTest`：多抽屉所有权、旧分组接续、安全移除和中断恢复，边缘／中心吸附、滞回、DPI、缩放锚点及屏幕回收。
-- `-Task P0Test`：后台 STA、图标合并与容量、恢复重试调度、布局合并、冲突检查、校验导出和性能样本上限；包含在 `Test` 中。
-- `-Task ManagerTest`：打开隔离 WPF 管理面板，检查抽屉创建／移除、18 项滚动与命中、列数重排、折叠和锁定，并导出面板及抽屉 PNG 预览；不移动真实桌面文件。
-- `-Task ResidentTest`：需交互桌面，使用内存启动项模拟，不更改实际开机启动。
-- `-Task StorageRenderTest`：需交互桌面，创建样例分区，检查动画、OLE 和 120 次移动。
-- `-Task IconTest`：隔离样例；本机存在 Axolotl 快捷方式时可选只读验证。
-- `-Task Probe` / `ShellTest` / `VisibilityProbe`：独立诊断项目，仅检查桌面接口。
-- `-Task RenderTest`：历史原型绘制检查，属于诊断项目。
+## 工程结构
 
-诊断工具不随应用发布。工具直接启动且不指定模式会打开历史诊断窗口，其中的旧图标位置实验可能改变桌面位置，应只在需要的人工验证中使用。
+```text
+src/DesktopGroups/             正式应用
+tests/DesktopGroups.Tests/     隔离回归检查
+tools/DesktopGroups.Diagnostics/ 桌面诊断工具
+scripts/                       构建、发布与素材导出
+installer/                     中文安装器与升级/卸载保护
+assets/brand/                  应用和托盘图标源文件
+assets/design/                 管理面板交互参考
+docs/                          当前文档与运行截图
+Qige.slnx                      解决方案
+```
 
-## 本机数据与发布
+根目录 `build.ps1`、`publish.ps1` 是稳定入口，实现位于 `scripts`。`ProjectEnvironment.ps1` 将可控 SDK/NuGet 缓存、TEMP/TMP 和日志定向到 `.build`，结束后恢复进程环境。bin/obj 保持在各项目内。
 
-开发运行传入 `--data-dir <项目>/.local/QigeData`，与 bin/obj 清理分离。发行程序默认在 exe 旁创建 `QigeData`。直接 `dotnet run` 未指定参数时也采用此默认行为。
+## 编译和运行
 
-开发机旧数据可在软件退出后执行 `.\build.ps1 -Task MigrateData`，将项目根 beta.1 `Data` / `Storage` 迁入 `.local/QigeData`。不要合并不同安装的数据。迁移支持同盘目录重命名，保留 NTFS 数据流；跨盘需先复制完整旧安装到目标磁盘，再就地升级。
+```powershell
+.\build.ps1 -Configuration Release
+.\build.ps1 -Task Demo -Configuration Release
+.\build.ps1 -Task Run -Configuration Release
+```
 
-`.\publish.ps1` 生成自带运行时 ZIP；`-FrameworkDependent` 生成依赖现有运行时的小包。产物在 `artifacts/releases`，附带 SHA256；已存在同名目录或 ZIP 时拒绝覆盖。发布仅编译正式项目。界面从程序集读取版本。
+`Demo` 使用隔离样例；`Run` 使用 `.local/QigeData` 并操作真实桌面。正式发行程序默认使用 EXE 旁的 `QigeData`。直接运行程序时，可传入绝对路径 `--data-dir`。
 
-品牌源文件和 ICO 在 `assets/brand`。`scripts/build-brand.ps1` 将各尺寸导出至 `artifacts/brand`；指定 `-UpdateAssets` 才更新需提交的 SVG、ICO 与预览，不提交所有重复 PNG。
+不要清理正在使用的数据目录。普通编译或 bin/obj 清理不应触及 `.local`。
 
-正式构建入口为 `Qige.exe`，项目路径与命名空间继续沿用 `DesktopGroups`。`.\publish.ps1 -Installer` 额外生成中文安装包到 `artifacts/installers`；需 Inno Setup，可用 `-InnoSetupCompiler` 指定编译器。安装包保留 exe 旁的 `QigeData`，升级和卸载不删除用户数据。构建方法、单 EXE 解包约束及升级保护见 [分发与安装包](distribution.md)。
+## 检查入口
 
-## 提交约定
+```powershell
+.\build.ps1 -Task Test -Configuration Release
+```
 
-文本统一 UTF-8、LF，规则在 `.editorconfig` 和 `.gitattributes`。修改搬移、恢复或数据布局时运行 `Test`；修改窗口、拖放、绘制时再运行对应交互检查。
+| Task | 检查内容 |
+| --- | --- |
+| `Test` | SelfTest、StorageTest、LayoutTest、P0Test |
+| `SelfTest` | 数据路径、原子写入、兼容迁移、冲突与中断 |
+| `StorageTest` | 收纳、同步、拖回、校验搬移及恢复 |
+| `LayoutTest` | 所有权、安全移除、吸附、DPI 和工作区约束 |
+| `P0Test` | 后台 STA、图标缓存、重试、快照合并和采样上限 |
+| `ManagerTest` | WPF 管理面板、后台收纳、恢复、退出及 PNG 导出 |
+| `ResidentTest` | 托盘、单实例、环境消息和隔离宿主重建 |
+| `StorageRenderTest` | 动画、悬停、OLE 回执与 120 次移动 |
+| `IconTest` | 默认、显式、相对路径及 Axolotl 图标 |
 
-不提交 `.local`、`.build`、`artifacts`、bin/obj、`QigeData`、旧版数据、本机技能配置、凭证、转储和日志。不要添加真实个人快捷方式。发布前检查暂存 diff 和打包内容。历史设计保留在 `docs/history`，当前行为以使用说明、架构和代码为准。
+每次测试在 `.build/test-results/runs/<id>` 建立独立数据。交互检查与单元/文件检查的边界见[验证说明](validation.md)。
 
-本轮三个 P0 的线程边界、性能口径和实机验收范围见 [P0 实现与验收](p0-validation.md)。
+诊断项目提供 `Probe`、`ShellTest`、`VisibilityProbe` 等入口。其默认界面含桌面实验操作，不作为普通使用入口，也不随应用分发。
+
+## 发布与素材
+
+```powershell
+.\publish.ps1 -Version 0.1.0-beta.8
+.\publish.ps1 -Version 0.1.0-beta.8 -Installer
+pwsh -STA -File scripts/build-brand.ps1
+```
+
+发布脚本拒绝覆盖已有同版本产物，构建新版本时同步更新版本配置。完整分发规则见[分发与安装](distribution.md)。
+
+品牌 SVG、ICO 以 `assets/brand` 为准。素材导出默认写入 `artifacts/brand`；只有 `-UpdateAssets` 才更新规范资源。品牌预览画板只作为本地导出，不进入项目首页。
+
+## 文档与提交
+
+文本使用 UTF-8、LF。变更文件状态或搬移协议需运行 `Test`；变更窗口、拖放或绘制再执行相关交互检查。文档改动核对链接、截图和功能边界，避免把规划写成现有能力。
+
+不提交 `.build`、`.local`、`artifacts`、bin/obj、`QigeData`、个人快捷方式、凭据或日志。文档使用固定文件名，截图集中于 `docs/images`。版本历史在 Git、CHANGELOG 和 GitHub Releases 中维护。

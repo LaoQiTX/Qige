@@ -100,11 +100,10 @@ function Draw-Tray($drawing, [int]$size, [string]$frameColor, [string]$tileColor
     $drawing.DrawRoundedRectangle((Brush $tileColor), $null, (Rect 9 9 4.5 4.5), 1, 1)
     $drawing.Pop()
 }
-$references = Join-Path $brandRoot 'docs/原型设计'
-Write-Utf8 'qige-app.svg' ([IO.File]::ReadAllText((Join-Path $references 'qige_app_icon_light.svg')))
-Write-Utf8 'qige-app-dark.svg' ([IO.File]::ReadAllText((Join-Path $references 'qige_app_icon_dark.svg')))
-Write-Utf8 'qige-mark-dark.svg' ([IO.File]::ReadAllText((Join-Path $references 'qige_icon_light.svg')))
-Write-Utf8 'qige-mark-light.svg' ([IO.File]::ReadAllText((Join-Path $references 'qige_icon_dark.svg')))
+$references = Join-Path $brandRoot 'assets/brand'
+foreach ($name in @('qige-app.svg','qige-app-dark.svg','qige-mark-dark.svg','qige-mark-light.svg')) {
+    Write-Utf8 $name ([IO.File]::ReadAllText((Join-Path $references $name)))
+}
 Write-Utf8 'qige-tray.svg' @"
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
   <title>栖格 Qige 托盘图标</title>
@@ -171,7 +170,7 @@ Png 'qige-brand-preview.png' 1600 900 {
 Write-Output ('Generated Qige SVG, PNG, ICO and preview in ' + $brandOutput)
 if ($UpdateAssets) {
     $canonical = Join-Path $brandRoot 'assets/brand'
-    foreach ($name in @('qige-app.svg','qige-app-dark.svg','qige-mark-light.svg','qige-mark-dark.svg','qige-tray.svg','qige-wordmark.svg','qige.ico','qige-tray-light.ico','qige-tray-dark.ico','qige-brand-preview.png')) {
+    foreach ($name in @('qige-app.svg','qige-app-dark.svg','qige-mark-light.svg','qige-mark-dark.svg','qige-tray.svg','qige-wordmark.svg','qige.ico','qige-tray-light.ico','qige-tray-dark.ico')) {
         Copy-Item -LiteralPath (Join-Path $brandOutput $name) -Destination $canonical -Force
     }
 }
