@@ -44,6 +44,7 @@ internal sealed class ShortcutPanel : IDisposable
     private string title = "常用";
     private double logicalWidth = 420, logicalHeight = 352, scrollOffset;
     private bool layoutLocked, scrolling, highlighted;
+    private bool itemMenuOpen;
     private int resizeEdges;
     private LayoutRect gestureStart;
     private long lastResize;
@@ -51,6 +52,7 @@ internal sealed class ShortcutPanel : IDisposable
     public event Action? LayoutCommitted;
     public event Action? InteractionEnded;
     public event Action? ManageRequested;
+    public event Action<string>? ItemMenuRequested;
     public bool LayoutLocked => layoutLocked;
     public double LogicalWidth => logicalWidth;
     public double LogicalHeight => logicalHeight;
@@ -84,7 +86,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal bool IsAnimating => animationTimer.IsEnabled;
     internal int AnimationFrames { get; private set; }
     internal bool IsAttached => Handle != 0 && IsWindow(Handle) && IsWindow(host) && NativeDesktop.GetParent(Handle) == host;
-    internal bool IsInteracting => dragging || resizeEdges != 0 || scrolling || pressedItem >= 0 || fileDrag;
+    internal bool IsInteracting => dragging || resizeEdges != 0 || scrolling || pressedItem >= 0 || fileDrag || itemMenuOpen;
     internal int AttachmentCount { get; private set; }
     public event Action<bool>? FoldedChanged;
     internal IPanelDropTarget DropTarget => dropTarget ?? throw new InvalidOperationException("拖放尚未注册。");
@@ -416,11 +418,19 @@ internal sealed class ShortcutPanel : IDisposable
         tracking = false;
         var needsRender = hovered != -1;
         hovered = -1;
-        if (!dragging && !fileDrag && pressedItem < 0 && folded && hoveringOpen) { hoveringOpen = false; needsRender = true; }
+        // Captured resize/scroll gestures can leave the visible bounds. Keep
+        // the expanded surface until the gesture ends, just as for dragging.
+        if (!IsInteracting && folded && hoveringOpen) { hoveringOpen = false; needsRender = true; }
         if (needsRender) Render();
     }
 
     internal void SelectAt(int x, int y) { selected = HitItem(x, y); Render(); }
+
+    internal void CloseItemMenu()
+    {
+        itemMenuOpen = false;
+        UpdateHoverAfterMove();
+    }
 
     private void SetFileDrag(bool active, bool keepHover)
     {
@@ -430,7 +440,7 @@ internal sealed class ShortcutPanel : IDisposable
         {
             if (!keepHover)
             {
-                if (folded && !dragging) hoveringOpen = false;
+                if (folded && !IsInteracting) hoveringOpen = false;
                 Render(); return;
             }
             // Drop occurs while normal mouse messages are captured by Explorer.
@@ -438,7 +448,7 @@ internal sealed class ShortcutPanel : IDisposable
             DesktopAttachment.GetCursorPos(out var point);
             DesktopAttachment.ScreenToClient(Handle, ref point);
             var inside = point.X >= 0 && point.X < Width && point.Y >= 0 && point.Y < Height;
-            if (!inside && folded && !dragging) hoveringOpen = false;
+            if (!inside && folded && !IsInteracting) hoveringOpen = false;
             if (inside) { PointerMove(point.X, point.Y); TrackPointerLeave(); }
         }
         Render();
@@ -527,18 +537,29 @@ internal sealed class ShortcutPanel : IDisposable
             case 0x202:
                 if (pressedItem >= 0) { CompleteIconGesture(); return 0; }
                 if (resizeEdges != 0) { ResizePointer(force: true); resizeEdges = 0; ReleaseCapture(); CommitLayout(); return 0; }
-                if (scrolling) { scrolling = false; ReleaseCapture(); return 0; }
+                if (scrolling) { scrolling = false; ReleaseCapture(); UpdateHoverAfterMove(); return 0; }
                 if (dragging) { dragging = false; ReleaseCapture(); CommitLayout(); }
                 return 0;
             case 0x20A:
                 ScrollBy(-(short)((wParam.ToInt64() >> 16) & 0xffff) / 120d * 94);
                 return 0;
             case 0x205:
+                var contextItem = HitItem(x, y);
+                if (contextItem >= 0 && ItemMenuRequested != null)
+                {
+                    if (IsInteracting) return 0;
+                    selected = contextItem; itemMenuOpen = true; Render();
+                    try { ItemMenuRequested.Invoke(items[contextItem].Path); }
+                    catch { CloseItemMenu(); throw; }
+                    return 0;
+                }
                 ManageRequested?.Invoke(); return 0;
             case 0x215:
                 if (pressedItem >= 0) { CancelIconGesture(); UpdateHoverAfterMove(); }
-                if (dragging || resizeEdges != 0) { dragging = false; resizeEdges = 0; CommitLayout(); }
+                var wasScrolling = scrolling;
                 scrolling = false;
+                if (dragging || resizeEdges != 0) { dragging = false; resizeEdges = 0; CommitLayout(); }
+                else if (wasScrolling) UpdateHoverAfterMove();
                 return 0;
             case 0x203:
                 var item = HitItem(x, y);
@@ -552,7 +573,10 @@ internal sealed class ShortcutPanel : IDisposable
 
     private int HitResize(int x, int y)
     {
-        if (layoutLocked) return 0;
+        if (layoutLocked || x < 0 || y < 0 || x >= Width || y >= Height) return 0;
+        // The visible diagonal sits inside the thin edge resize margin. Give
+        // the entire corner its own DPI-scaled grip for resizing both axes.
+        if (IsExpanded && x >= Width - 24 * scale && y >= Height - 24 * scale) return 2 | 8;
         var margin = 6 * scale;
         var horizontal = x < margin ? 1 : x >= Width - margin ? 2 : 0;
         var vertical = !IsExpanded ? 0 : y < margin ? 4 : y >= Height - margin ? 8 : 0;
@@ -629,9 +653,11 @@ internal sealed class ShortcutPanel : IDisposable
 
     private void UpdateHoverAfterMove()
     {
+        if (!IsAttached) return;
         DesktopAttachment.GetCursorPos(out var point);
         DesktopAttachment.ScreenToClient(Handle, ref point);
         if (point.X < 0 || point.X >= Width || point.Y < 0 || point.Y >= Height) PointerLeave();
+        else { PointerMove(point.X, point.Y); TrackPointerLeave(); }
     }
 
     private static void Text(DrawingContext drawing, string text, double x, double y, double size, Color color, double width, double height, FontWeight? weight = null, TextAlignment alignment = TextAlignment.Left)

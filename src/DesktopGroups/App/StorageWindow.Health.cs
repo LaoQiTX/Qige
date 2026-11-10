@@ -16,6 +16,8 @@ internal sealed partial class StorageWindow
     private readonly DispatcherTimer performanceTimer = new() { Interval = TimeSpan.FromSeconds(15) };
     private readonly Stopwatch heartbeat = Stopwatch.StartNew();
     private bool recoveringLayout, scanning, rescanRequested, disposed, performanceWriting;
+    private bool desktopLogWriting;
+    private object? pendingDesktopLog;
     private int watchdogTicks;
     private string topology = "", environmentIssue = "";
     private long lastHeartbeat;
@@ -49,7 +51,8 @@ internal sealed partial class StorageWindow
         long? idleSince = null;
         while (timeout.Elapsed < TimeSpan.FromSeconds(20))
         {
-            var pending = BusyOperations > 0 || scanning || iconCache.PendingCount > 0 || restoringExit || syncTimer.IsEnabled;
+            var pending = BusyOperations > 0 || scanning || iconCache.PendingCount > 0 || restoringExit || syncTimer.IsEnabled
+                || desktopLogWriting || performanceWriting;
             if (pending) idleSince = null;
             else
             {
@@ -60,10 +63,12 @@ internal sealed partial class StorageWindow
         }
         throw new TimeoutException($"后台操作未在验证时限内完成：文件任务={BusyOperations}，恢复检查={scanning}，图标={iconCache.PendingCount}，退出={restoringExit}，同步计时={syncTimer.IsEnabled}。");
     }
-    private void SignalEnvironment(string reason)
+    internal void SignalEnvironment(string reason)
     {
         recoveryPolicy.Signal(reason, DateTimeOffset.UtcNow);
-        environmentTimer.Stop(); environmentTimer.Start();
+        // Start is idempotent. Restarting here would indefinitely postpone the
+        // first timer tick during a stream of settings/display notifications.
+        environmentTimer.Start();
         RecreateDesktopWatcher();
     }
     private void RecreateDesktopWatcher()
@@ -110,7 +115,7 @@ internal sealed partial class StorageWindow
         var due = recoveryPolicy.IsDue(DateTimeOffset.UtcNow);
         if (due) RecoverDesktop(true);
         else if (!missing && !recoveryPolicy.Pending) RecoverDesktop(false);
-        if (HealthBox.Visibility == Visibility.Visible) RefreshHealthText();
+        if (SettingsBox.Visibility == Visibility.Visible && RecoverySettingsPage.Visibility == Visibility.Visible) RefreshHealthText();
     }
     private void SamplePerformance()
     {
@@ -129,6 +134,36 @@ internal sealed partial class StorageWindow
             finally { performanceWriting = false; }
         }
     }
+    private void RecordDesktopLifetime(string state)
+    {
+        // Snapshot on the dispatcher; file I/O stays serialized on the worker.
+        // Coalesce slow writes so diagnostics cannot grow an unbounded queue.
+        pendingDesktopLog = new
+        {
+            At = DateTimeOffset.Now, State = state, recoveryPolicy.Reason,
+            RecoveryPending = recoveryPolicy.Pending, EnvironmentIssue = environmentIssue,
+            Monitors = DesktopPlacement.Capture(),
+            Drawers = runtimes.Values.Select(r => new
+                { r.Definition.Id, r.Definition.Name, Attached = r.Panel.IsAttached, r.Panel.AttachmentCount, r.Issue }).ToArray(),
+            TrayAvailable = TrayAvailable
+        };
+        if (desktopLogWriting || disposed) return;
+        desktopLogWriting = true;
+        _ = WriteLog();
+        async Task WriteLog()
+        {
+            try
+            {
+                while (!disposed && pendingDesktopLog is { } snapshot)
+                {
+                    pendingDesktopLog = null;
+                    try { await fileWorker.Run(() => { storage.WriteJson("logs/desktop-lifetime.json", snapshot); return true; }); }
+                    catch (Exception e) { if (!disposed) Status("连接日志写入失败：" + e.Message); }
+                }
+            }
+            finally { desktopLogWriting = false; }
+        }
+    }
     private void RefreshHealthText()
     {
         HealthSummary.Text = $"桌面连接 {runtimes.Values.Count(r => r.Panel.IsAttached)}/{runtimes.Count} · 托盘{(TrayAvailable ? "正常" : "等待恢复")} · 正在执行 {BusyOperations} 项操作";
@@ -138,10 +173,7 @@ internal sealed partial class StorageWindow
             (sample == null ? "等待首个资源采样（每 15 秒一次）" : $"进程 CPU：{sample.ProcessCpuPercent:F2}% · 工作集：{sample.WorkingSetMB:F1} MB · 私有内存：{sample.PrivateMB:F1} MB\nUI 调度最大延迟：{sample.UiDelayMs:F0} ms · 已采样 {performance.SampleCount} 次（最多保留 240 次）") +
             $"\n图标缓存：{iconCache.Count}/256 · 已加载：{iconCache.Loads} · 缓存命中：{iconCache.Hits}";
         RecoveryCountLabel.Text = recoveryProblems.Count == 0 ? "没有检查到待处理文件。" : $"{recoveryProblems.Count} 个待处理文件 · 先检查两处内容，操作不会覆盖同名文件";
-    }
-    private async void HealthClick(object sender, RoutedEventArgs e)
-    {
-        ShowModal(HealthBox); RefreshHealthText(); await ScanRecoveryAsync();
+        RestoreAllButton.IsEnabled = RecollectAllButton.IsEnabled = !closing && !exitAfterOperations && BusyOperations == 0;
     }
     private async void RefreshRecoveryClick(object sender, RoutedEventArgs e) => await ScanRecoveryAsync();
     internal async Task ScanRecoveryAsync()
@@ -165,7 +197,8 @@ internal sealed partial class StorageWindow
             }
             if (disposed) return;
             recoveryProblems.Clear(); foreach (var item in collected) recoveryProblems.Add(item);
-            HealthButton.Content = collected.Count == 0 ? "运行与恢复" : $"运行与恢复 · {collected.Count}";
+            SettingsButtonLabel.Text = collected.Count == 0 ? "设置" : $"设置 · {collected.Count} 项待处理";
+            RecoverySettingsTab.Content = collected.Count == 0 ? "运行与恢复" : $"运行与恢复 · {collected.Count}";
             RefreshHealthText();
         }
         catch (Exception e) { if (!disposed) { HealthEnvironment.Text = "检查未完成：" + e.Message; Status(HealthEnvironment.Text); } }
@@ -241,7 +274,7 @@ internal sealed partial class StorageWindow
     {
         if ((closing || exitAfterOperations) && !duringExit) return false;
         if (runtime.Busy || disposed) { Status("此抽屉仍有操作进行中，请稍后重试。"); return false; }
-        runtime.Busy = true; Status(operation + "中…");
+        runtime.Busy = true; RefreshHealthText(); Status(operation + "中…");
         var success = false;
         try
         {

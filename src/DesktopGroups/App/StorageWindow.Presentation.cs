@@ -152,27 +152,9 @@ internal sealed partial class StorageWindow
         StudioTitle.Text = Selected?.Name ?? "选择一个抽屉";
         StudioSubtitle.Text = Selected == null ? "从左侧选择抽屉，查看内容与操作" : $"桌面整理 · {currentContents.Count} 个入口 · {contents.Length} 项匹配";
     }
-    private void GridPreviewClick(object sender, RoutedEventArgs e) => SetContentPreview(false);
-    private void ListPreviewClick(object sender, RoutedEventArgs e) => SetContentPreview(true);
-    internal void SetContentPreview(bool list)
-    {
-        ContentsList.ItemTemplate = (DataTemplate)FindResource(list ? "ContentRow" : "IconTile");
-        var factory = new FrameworkElementFactory(list ? typeof(StackPanel) : typeof(WrapPanel));
-        ContentsList.ItemsPanel = new ItemsPanelTemplate(factory);
-        GridViewButton.IsChecked = !list; ListViewButton.IsChecked = list;
-    }
-    private void AlwaysModeClick(object sender, RoutedEventArgs e) { FoldBox.IsChecked = false; FoldClick(sender, e); }
-    private void HoverModeClick(object sender, RoutedEventArgs e) { FoldBox.IsChecked = true; FoldClick(sender, e); }
-    private void LocateCardClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: DrawerRow row }) { SelectDrawer(row.Id); LocateClick(sender, e); }
-        e.Handled = true;
-    }
-    private void RestoreCardClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement { DataContext: DrawerRow row }) { SelectDrawer(row.Id); RestoreClick(sender, e); }
-        e.Handled = true;
-    }
+    private void AlwaysModeClick(object sender, RoutedEventArgs e) => SetFoldMode(false);
+    private void HoverModeClick(object sender, RoutedEventArgs e) => SetFoldMode(true);
+    private void SetFoldMode(bool folded) => Try(() => { SelectedRuntime?.Panel.SetFolded(folded); UpdateDetail(); });
     private void OpenItemClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (sender is not FrameworkElement { DataContext: ManagerContent item }) return;
@@ -188,18 +170,17 @@ internal sealed partial class StorageWindow
     private void ShowModal(Border box)
     {
         if (ModalLayer.Visibility != Visibility.Visible) modalReturnFocus = Keyboard.FocusedElement;
-        CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = HealthBox.Visibility = Visibility.Collapsed;
+        CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = Visibility.Collapsed;
         ModalLayer.Visibility = box.Visibility = Visibility.Visible;
         KeyboardNavigation.SetTabNavigation(box, KeyboardNavigationMode.Cycle);
         box.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
     }
     private void DismissModal()
     {
-        ModalLayer.Visibility = CreateBox.Visibility = PreferencesBox.Visibility = CloseBox.Visibility = HealthBox.Visibility = Visibility.Collapsed;
+        ModalLayer.Visibility = CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = Visibility.Collapsed;
         if (modalReturnFocus != null) Keyboard.Focus(modalReturnFocus);
     }
     private void DismissModalClick(object sender, RoutedEventArgs e) => DismissModal();
-    private void PreferencesClick(object sender, RoutedEventArgs e) { RefreshStartup(); ShowModal(PreferencesBox); }
     private void ClosePanelClick(object sender, RoutedEventArgs e) => ShowModal(CloseBox);
     private void MinimizeClick(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
     private void MaximizeClick(object sender, RoutedEventArgs e)
@@ -214,6 +195,8 @@ internal sealed partial class StorageWindow
     }
     private void ManagerKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.OemComma && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        { ShowSettings(); e.Handled = true; return; }
         if (e.Key == Key.Escape && ModalLayer.Visibility == Visibility.Visible) { DismissModal(); e.Handled = true; }
     }
 }

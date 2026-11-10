@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8">下载 beta.8</a> ·
+  <a href="https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.9">下载 beta.9</a> ·
   <a href="docs/user-guide.md">使用指南</a> ·
   <a href="docs/README.md">项目文档</a> ·
   <a href="docs/roadmap.md">开发计划</a> ·
@@ -63,12 +63,14 @@
 - **托盘常驻**：关闭管理面板后继续运行，可选择登录 Windows 后启动。
 - **集中恢复**：查看冲突位置、重试或另存副本；退出时等待文件操作并归还内容。
 - **后台处理**：文件操作和图标解析在后台执行，提供本机性能记录。
+- **统一设置**：底栏、托盘或 Ctrl+, 打开同一设置；展开方式与锁定可选择同步到全部抽屉。
+- **图标右键**：打开、快捷方式所在位置、系统属性和单项归还，菜单与管理面板采用一致样式。
 
 当前为测试版，支持**个人桌面根目录的 `.lnk` / `.url`**。文件夹映射、普通文件收纳和全桌面双击隐藏仍在[开发计划](docs/roadmap.md)中。
 
 ## 下载与开始使用
 
-从 **[GitHub Releases](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.8)** 下载 Windows x64 版本：
+从 **[GitHub Releases](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.9)** 下载 Windows x64 版本：
 
 | 版本 | 使用方式 |
 | --- | --- |

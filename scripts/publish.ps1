@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [string]$Version = '0.1.0-beta.8',
+    [string]$Version = '0.1.0-beta.9',
     [switch]$FrameworkDependent,
     [switch]$Installer,
     [string]$InnoSetupCompiler
@@ -34,6 +34,11 @@ Invoke-ProjectEnvironment {
             Copy-Item -LiteralPath $item.FullName -Destination $packageFolder -Recurse
         }
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/user-guide.md') -Destination (Join-Path $packageFolder '使用说明.md')
+        # Preserve relative guide links and screenshots in both distribution formats.
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs') -Destination (Join-Path $packageFolder 'docs') -Recurse
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/images') -Destination (Join-Path $packageFolder 'images') -Recurse
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination (Join-Path $packageFolder 'assets') -Recurse
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $packageFolder
         Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $packageFolder
         $launcher = @('@echo off','start "" "%~dp0Qige.exe" --demo','') -join [Environment]::NewLine
         [IO.File]::WriteAllText((Join-Path $packageFolder '打开样例.cmd'), $launcher, [Text.Encoding]::ASCII)

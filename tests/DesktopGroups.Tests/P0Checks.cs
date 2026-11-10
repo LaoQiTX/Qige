@@ -29,6 +29,22 @@ internal static class P0Checks
         policy.Complete(true, now);
         Check(!policy.Pending && !policy.IsDue(now.AddDays(1)), "successful recovery stops retries");
 
+        policy.Signal("连续显示通知", now);
+        for (var i = 1; i <= 20; i++) policy.Signal("设置通知 " + i, now.AddMilliseconds(i * 100));
+        Check(policy.IsDue(now.AddSeconds(2)), "continuous environment notifications cannot postpone recovery beyond two seconds");
+        policy.Complete(false, now.AddSeconds(2));
+        policy.Signal("重复的显示通知", now.AddMilliseconds(2100));
+        Check(!policy.IsDue(now.AddMilliseconds(2999)) && policy.IsDue(now.AddSeconds(3)),
+            "notifications during a failed recovery preserve its retry backoff");
+        policy.Complete(false, now.AddSeconds(3));
+        policy.Signal("唤醒期间的重复通知", now.AddMilliseconds(3100));
+        Check(!policy.IsDue(now.AddMilliseconds(4999)) && policy.IsDue(now.AddSeconds(5)),
+            "repeated notifications do not reset exponential recovery backoff");
+        policy.Complete(true, now.AddSeconds(5));
+        policy.Signal("下一次独立变化", now.AddSeconds(10));
+        Check(!policy.IsDue(now.AddMilliseconds(10299)) && policy.IsDue(now.AddMilliseconds(10300)),
+            "successful recovery starts a fresh debounce window for a later event");
+
         var caller = Environment.CurrentManagedThreadId;
         var loaderThread = caller;
         var apartment = ApartmentState.Unknown;
@@ -113,6 +129,15 @@ internal static class P0Checks
         using var json = JsonDocument.Parse(File.ReadAllText(storage.Resolve("logs/performance-current.json")));
         Check(json.RootElement.GetProperty("Samples").GetArrayLength() == 240 && json.RootElement.GetProperty("StartupScope").GetString()!.Contains("管理窗口"),
             "performance export includes bounded samples and an explicit startup measurement scope");
+        var session = json.RootElement.GetProperty("Session");
+        Check(session.GetProperty("TotalSamples").GetInt64() == 245 && session.GetProperty("UptimeSeconds").GetDouble() > 0,
+            "session totals survive rolling sample eviction and include runtime duration");
+        Check(session.GetProperty("PeakWorkingSetMB").GetDouble() >= recorder.Latest!.WorkingSetMB
+            && session.GetProperty("PeakPrivateMB").GetDouble() >= recorder.Latest.PrivateMB
+            && session.GetProperty("AverageCpuPercent").GetDouble() is >= 0 and <= 100,
+            "whole-session resource peaks and time-weighted CPU remain available after sample eviction");
+        Check(Math.Abs(session.GetProperty("InitialPrivateMB").GetDouble() + session.GetProperty("PrivateMemoryChangeMB").GetDouble()
+            - recorder.Latest.PrivateMB) < .001, "session memory growth retains the original baseline rather than the rolling window start");
         storage.WriteJson("p0-results.json", new { Passed = results.Count, Results = results, RealDesktopFilesMoved = false });
         Console.WriteLine(string.Join(Environment.NewLine, results));
         Console.WriteLine("Results: " + storage.Resolve("p0-results.json"));

@@ -84,6 +84,7 @@ internal static class StoragePanelCheck
             await FinishAnimation(panel);
             if (panel.IsExpanded || DesktopAttachment.ReadState(panel.Handle).Height != collapsed.Height)
                 throw new InvalidOperationException("离开没有立即折叠。");
+            await CheckHoverResizeAsync(panel);
             var newShortcut = Path.Combine(store.DesktopPath, "拖入样例.url");
             File.WriteAllText(newShortcut, "[InternetShortcut]\r\nURL=https://example.com/drop-check\r\n");
             using var dragData = new ShellSampleData(newShortcut);
@@ -153,10 +154,13 @@ internal static class StoragePanelCheck
                 OleDragEnterExpands = true, OleDropCollectedSample = true, OptimizedMoveReceipt = true,
                 UnsupportedDropRejected = true, NativeOleRegistrationSucceeded = true,
                 DragGhostCreatedMovedDisposed = true,
+                HoverResizeKeepsExpanded = true, HoverResizeCaptureLossResetsInteraction = true,
+                VisibleCornerGripResizesBothAxes = true, LockedCornerGripRejectsResize = true,
                 VisualDesktopAccepted = false, RealDesktopFilesMoved = false
             });
             Console.WriteLine($"PASS 120 single-surface moves; no bitmap rebuilds or Shell icon reposition; icon alpha255 and body alpha225; move API p95 {timings[(int)(timings.Count * .95)]:F3}ms");
             Console.WriteLine("PASS queued OLE receiver reports no Shell source deletion while background work is pending");
+            Console.WriteLine("PASS visible bottom-right grip resizes both axes, honors layout locking and keeps hover drawers open until release or capture loss");
             Console.WriteLine("PASS immediate-start animated expansion/collapse using cached pixels; independent hover/selection; OLE drag-enter expansion and sample drop; source deletion receipt; unsupported files rejected");
         }
         finally
@@ -173,6 +177,77 @@ internal static class StoragePanelCheck
         while (panel.IsAnimating && Environment.TickCount64 < deadline) await Task.Delay(16);
         if (panel.IsAnimating) throw new InvalidOperationException("展开／收起动画未正常结束。");
     }
+
+    private static async Task CheckHoverResizeAsync(ShortcutPanel panel)
+    {
+        var width = panel.LogicalWidth;
+        var height = panel.LogicalHeight;
+        var transform = panel.TransformLayout;
+        try
+        {
+            panel.PointerMove(30, 20);
+            await FinishAnimation(panel);
+            var expandedHeight = panel.Height;
+            var scale = panel.Width / panel.LogicalWidth;
+            // Send messages only to our sample HWND, without moving the user's cursor.
+            var gripInset = (int)Math.Round(12 * scale);
+            SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - gripInset, panel.Height - gripInset));
+            if (!panel.IsInteracting) throw new InvalidOperationException("按住右下角可见斜线没有开始调整大小。");
+            panel.PointerLeave();
+            await FinishAnimation(panel);
+            if (!panel.IsExpanded || panel.Height != expandedHeight)
+                throw new InvalidOperationException("调整边框时鼠标离开导致抽屉自动折叠。");
+            var resizedEdges = 0;
+            panel.TransformLayout = (rect, edges) =>
+            {
+                resizedEdges = edges;
+                return rect with { Width = (width + 40) * scale, Height = (height + 32) * scale };
+            };
+            SendMessage(panel.Handle, 0x200, 1, 0);
+            SendMessage(panel.Handle, 0x202, 0, 0);
+            if (panel.IsInteracting || resizedEdges != 10 || !panel.IsFolded
+                || Math.Abs(panel.LogicalWidth - width - 40) > 1 || Math.Abs(panel.LogicalHeight - height - 32) > 1)
+                throw new InvalidOperationException("鼠标离开后的边框调整没有保存新的宽高。");
+            CheckPointerState(panel);
+            await FinishAnimation(panel);
+
+            panel.PointerMove(30, 20);
+            await FinishAnimation(panel);
+            SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - 1, panel.Height - 1));
+            panel.PointerLeave();
+            if (!panel.IsExpanded) throw new InvalidOperationException("捕获丢失前边框调整错误折叠。");
+            ReleaseCapture();
+            if (panel.IsInteracting) throw new InvalidOperationException("捕获丢失后仍停留在调整大小状态。");
+            CheckPointerState(panel);
+            await FinishAnimation(panel);
+
+            panel.Configure("常用", panel.LogicalWidth, panel.LogicalHeight, true);
+            panel.PointerMove(30, 20);
+            await FinishAnimation(panel);
+            SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - gripInset, panel.Height - gripInset));
+            if (panel.IsInteracting) throw new InvalidOperationException("锁定布局后右下角仍允许调整大小。");
+        }
+        finally
+        {
+            ReleaseCapture();
+            panel.TransformLayout = transform;
+            panel.Configure("常用", width, height, false);
+            panel.PointerLeave();
+            await FinishAnimation(panel);
+        }
+    }
+
+    private static void CheckPointerState(ShortcutPanel panel)
+    {
+        DesktopAttachment.GetCursorPos(out var cursor);
+        DesktopAttachment.ScreenToClient(panel.Handle, ref cursor);
+        var inside = cursor.X >= 0 && cursor.X < panel.Width && cursor.Y >= 0 && cursor.Y < panel.Height;
+        if (panel.IsExpanded != inside) throw new InvalidOperationException("调整结束后没有按鼠标位置恢复悬停状态。");
+    }
+
+    private static nint MousePoint(int x, int y) => (nint)((y << 16) | (x & 0xffff));
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ReleaseCapture();
 
     private static int ReadEffect(IDataObject data, string name)
     {

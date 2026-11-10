@@ -53,6 +53,8 @@ internal sealed partial class StorageWindow : Window
         Title = demo ? "栖格 Qige · 管理面板样例" : $"栖格 Qige · 抽屉管理 · {AppBrand.Version}";
         Icon = BitmapFrame.Create(AppBrand.IconUri); BrandIcon.Source = Icon;
         VersionLabel.Text = $"QIGE / {AppBrand.Version}";
+        SettingsDataPath.Text = this.storage.Root;
+        if (demo) StartupSettingsNote.Text = "隔离样例不修改 Windows 启动项，请在正式模式中设置。";
         InitializeManagerViews();
         SnapBox.IsChecked = catalog.Settings.SnapEnabled;
         StartupBox.IsEnabled = !demo; AddSelectedButton.IsEnabled = !demo;
@@ -65,7 +67,11 @@ internal sealed partial class StorageWindow : Window
         Loaded += (_, _) => Initialize();
         syncTimer.Tick += (_, _) => Synchronize();
         desktopTimer.Tick += (_, _) => DesktopTick();
-        environmentTimer.Tick += (_, _) => { environmentTimer.Stop(); RecoverDesktop(true); };
+        environmentTimer.Tick += (_, _) =>
+        {
+            if (!recoveryPolicy.Pending) environmentTimer.Stop();
+            else if (recoveryPolicy.IsDue(DateTimeOffset.UtcNow)) { environmentTimer.Stop(); RecoverDesktop(true); }
+        };
         Closing += OnClosing;
         Application.Current.SessionEnding += OnSessionEnding;
     }
@@ -101,7 +107,7 @@ internal sealed partial class StorageWindow : Window
                 if (legacy.HasRecovery) legacy.Restore();
             }
             RefreshStartup();
-            tray = new ResidentTray(storage.Root, TrayAction, () => startup?.Enabled == true, startupAvailable: !demo);
+            tray = new ResidentTray(storage.Root, TrayAction);
             tray.EnvironmentChanged += SignalEnvironment;
             foreach (var drawer in catalog.Settings.Drawers.ToArray())
                 AddRuntime(drawer);
@@ -144,7 +150,6 @@ internal sealed partial class StorageWindow : Window
             store.Profile.Folded = folded; if (!runtime.Busy) store.Save(); UpdateRow(runtime);
             if (Selected?.Id == definition.Id)
             {
-                FoldBox.IsChecked = folded;
                 AlwaysModeButton.IsChecked = !folded; HoverModeButton.IsChecked = folded;
                 SelectedSubtitle.Text = $"{runtime.Row.Placement} · {runtime.Row.State}";
             }
@@ -154,6 +159,8 @@ internal sealed partial class StorageWindow : Window
         panel.InteractionEnded += () => { runtime.Snap = new(); guides.Hide(); };
         panel.LayoutCommitted += () => { SaveLayout(runtime); UpdateDetail(); };
         panel.ManageRequested += () => { SelectDrawer(definition.Id); ShowControl(); };
+        panel.ItemMenuRequested += path => OpenDrawerItemMenu(runtime, path);
+        panel.Disposed += () => { if (itemMenu != null) itemMenu.IsOpen = false; };
         store.Changed += () => RefreshItems(runtime);
         rows.Add(row); runtimes.Add(definition.Id, runtime);
         RefreshItems(runtime);
@@ -252,9 +259,7 @@ internal sealed partial class StorageWindow : Window
         if (lastConnection != state || force)
         {
             lastConnection = state;
-            storage.WriteJson("logs/desktop-lifetime.json", new { At = DateTimeOffset.Now, State = state,
-                Drawers = runtimes.Values.Select(r => new { r.Definition.Id, r.Definition.Name, Attached = r.Panel.IsAttached, r.Panel.AttachmentCount, r.Issue }),
-                TrayAvailable = tray?.Available == true });
+            RecordDesktopLifetime(state);
             RefreshOverview();
         }
     }
@@ -302,12 +307,12 @@ internal sealed partial class StorageWindow : Window
         var row = Selected;
         DetailView.Visibility = row == null ? Visibility.Collapsed : Visibility.Visible;
         EmptyView.Visibility = row == null ? Visibility.Visible : Visibility.Collapsed;
-        if (row == null) { currentContents = []; ContentsList.ItemsSource = null; FillStudioContents(); RefreshOverview(); return; }
+        if (row == null) { currentContents = []; FillStudioContents(); RefreshOverview(); return; }
         updating = true;
         try
         {
             SelectedTitle.Text = row.Name; NameBox.Text = row.Name;
-            FoldBox.IsChecked = row.Store.Profile.Folded; LockBox.IsChecked = row.Store.Profile.Locked;
+            LockBox.IsChecked = row.Store.Profile.Locked;
             AlwaysModeButton.IsChecked = !row.Store.Profile.Folded; HoverModeButton.IsChecked = row.Store.Profile.Folded;
             ApplyLayoutButton.IsEnabled = !row.Store.Profile.Locked;
             foreach (var box in new[] { XBox, YBox, WidthBox, HeightBox }) box.IsEnabled = !row.Store.Profile.Locked;
@@ -327,9 +332,6 @@ internal sealed partial class StorageWindow : Window
     private void FillContents(ShortcutStore store)
     {
         currentContents = BuildContents(store);
-        ContentsTitle.Text = $"内容透视 · {currentContents.Count}";
-        NoContentsLabel.Visibility = currentContents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        ContentsList.ItemsSource = currentContents;
         FillStudioContents();
     }
     private void RefreshOverview()
@@ -392,11 +394,6 @@ internal sealed partial class StorageWindow : Window
     {
         catalog.Settings.SnapEnabled = SnapBox.IsChecked == true; catalog.Save();
         guides.Hide(); Status(catalog.Settings.SnapEnabled ? "吸附已开启。按住 Alt 可临时自由拖动。" : "吸附已关闭。");
-    });
-    private void FoldClick(object sender, RoutedEventArgs e) => Try(() =>
-    {
-        SelectedRuntime?.Panel.SetFolded(FoldBox.IsChecked == true);
-        UpdateDetail();
     });
     private void LockClick(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -473,6 +470,7 @@ internal sealed partial class StorageWindow : Window
         var issues = catalog.CompleteRemoval(id);
         if (issues.Count > 0) { Issues(r, issues); Status("归还未完成，抽屉及恢复记录已保留。"); return false; }
         r.Panel.Dispose(); runtimes.Remove(id); rows.Remove(r.Row);
+        _ = ScanRecoveryAsync();
         SelectDrawer(rows.FirstOrDefault()?.Id ?? ""); RecoverDesktop(false); Status("已归还内容并移除抽屉。");
         return true;
     }
@@ -499,18 +497,7 @@ internal sealed partial class StorageWindow : Window
         switch (command)
         {
             case TrayCommand.Show: ShowControl(); break;
-            case TrayCommand.Health: ShowControl(); HealthClick(this, new RoutedEventArgs()); break;
-            case TrayCommand.LocateAll: LocateAllClick(this, new RoutedEventArgs()); break;
-            case TrayCommand.Locate: LocateSelected(); break;
-            case TrayCommand.Restore:
-                foreach (var r in runtimes.Values) { r.Paused = true; _ = RunStoreAsync(r, "归还桌面", store => store.RestoreAll()); }
-                break;
-            case TrayCommand.Recollect:
-                RecoverDesktop(false);
-                foreach (var r in runtimes.Values.Where(r => r.Panel.IsAttached && !r.Definition.Removing))
-                { r.Paused = false; _ = RunStoreAsync(r, "重新收纳", store => store.StartSession()); }
-                break;
-            case TrayCommand.Startup: startup?.SetEnabled(startup.Enabled != true); RefreshStartup(); break;
+            case TrayCommand.Settings: ShowControl(); ShowSettings(); break;
             case TrayCommand.Exit: RequestExit(); break;
         }
     });
@@ -531,6 +518,7 @@ internal sealed partial class StorageWindow : Window
             exitAfterOperations = true; Status("正在完成文件操作，完成后自动归还并退出。"); return;
         }
         restoringExit = closing = true; syncTimer.Stop(); desktopTimer.Stop(); environmentTimer.Stop(); guides.Hide();
+        if (itemMenu != null) itemMenu.IsOpen = false;
         var issues = new List<string>();
         foreach (var r in runtimes.Values.ToArray())
         {
@@ -542,7 +530,7 @@ internal sealed partial class StorageWindow : Window
         {
             closing = exitRequested = false;
             Status(string.Join("；", issues));
-            DismissModal(); ShowControl(); ShowModal(HealthBox); await ScanRecoveryAsync(); desktopTimer.Start(); return;
+            DismissModal(); ShowControl(); ShowSettings(SettingsSection.Recovery); await ScanRecoveryAsync(); desktopTimer.Start(); return;
         }
         SamplePerformance(); exitReady = true;
         _ = Dispatcher.BeginInvoke(Close);

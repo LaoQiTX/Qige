@@ -153,7 +153,7 @@ internal static class ResidentChecks
         Check(errors.Count == 0, "native recovery does not report unexpected callback failures");
 
         var openReceived = false;
-        using (var tray = new ResidentTray(relayRoot, action => openReceived |= action == TrayCommand.Show, () => false))
+        using (var tray = new ResidentTray(relayRoot, action => openReceived |= action == TrayCommand.Show))
         {
             Check(tray.Available, "native tray registration succeeds on the current desktop");
             PostMessage(tray.Handle, 0x8001, 0, 0x400);
