@@ -33,10 +33,11 @@ Invoke-ProjectEnvironment {
         foreach ($item in Get-ChildItem -LiteralPath $publishFolder -Force) {
             Copy-Item -LiteralPath $item.FullName -Destination $packageFolder -Recurse
         }
-        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/user-guide.md') -Destination (Join-Path $packageFolder '使用说明.md')
+        $guide = [IO.File]::ReadAllText((Join-Path $projectRoot 'docs/user-guide.md'))
+        $guide = [regex]::Replace($guide, '\]\((?![a-zA-Z][a-zA-Z0-9+.-]*:|/|#)', '](docs/')
+        [IO.File]::WriteAllText((Join-Path $packageFolder '使用说明.md'), $guide, [Text.UTF8Encoding]::new($false))
         # Preserve relative guide links and screenshots in both distribution formats.
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs') -Destination (Join-Path $packageFolder 'docs') -Recurse
-        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/images') -Destination (Join-Path $packageFolder 'images') -Recurse
         Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination (Join-Path $packageFolder 'assets') -Recurse
         Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $packageFolder
         Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $packageFolder
