@@ -55,10 +55,24 @@ internal static class ManagerChecks
             {
                 var results = new List<string>();
                 void Check(bool pass, string text) { if (!pass) throw new InvalidOperationException(text); results.Add("PASS " + text); }
-                window = new StorageWindow(storage, demo: true);
-                window.Show();
+                window = new StorageWindow(storage, demo: true, background: true);
+                window.Start();
                 await Task.Delay(500);
                 await window.WaitForIdleAsync();
+                Check(!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0
+                    && window.TrayAvailable && window.Panels.All(p => p.IsAttached),
+                    "background launch attaches drawers and registers the tray without creating a manager HWND");
+                var originalPanels = window.Panels.ToArray();
+                var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                window.ContentRendered += (_, _) => rendered.TrySetResult();
+                window.ShowControl();
+                await rendered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Check(window.IsVisible && ((FrameworkElement)window.Content).ActualWidth > 0,
+                    "the first tray-style open renders the manager without a second click");
+                window.Hide(); window.ShowControl();
+                await Task.Delay(100);
+                Check(window.Panels.SequenceEqual(originalPanels) && window.TrayAvailable,
+                    "reopening the manager does not recreate drawers or initialize a second resident session");
                 Check(window.Panels.Count == 2 && window.Panels.All(p => p.IsAttached), "manager attaches both independent demo drawers");
                 var beforeNotifications = window.Panels[0].SurfaceBuilds;
                 for (var i = 0; i < 25; i++)

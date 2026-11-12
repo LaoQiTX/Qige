@@ -16,6 +16,21 @@ internal static class P0Checks
         void Check(bool pass, string text)
         { if (!pass) throw new InvalidOperationException(text); results.Add("PASS " + text); }
         var now = DateTimeOffset.UtcNow;
+        var logon = new DesktopRecoveryPolicy();
+        logon.BeginStartup(now);
+        for (var i = 0; i < 20; i++)
+        {
+            var attempt = now.AddMilliseconds(i * 300);
+            logon.Complete(false, attempt);
+            Check(!logon.IsDue(attempt.AddMilliseconds(299)) && logon.IsDue(attempt.AddMilliseconds(300)),
+                "logon host retry remains responsive during Explorer startup " + i);
+        }
+        logon.Complete(false, now.AddSeconds(21));
+        Check(!logon.IsDue(now.AddMilliseconds(21999)) && logon.IsDue(now.AddSeconds(22)),
+            "a prolonged missing desktop returns to bounded exponential backoff");
+        logon.Complete(true, now.AddSeconds(22));
+        logon.Complete(false, now.AddSeconds(23));
+        Check(logon.IsDue(now.AddSeconds(24)), "successful logon ends the fast retry window");
         var policy = new DesktopRecoveryPolicy();
         policy.Signal("显示器变化", now);
         Check(!policy.IsDue(now.AddMilliseconds(299)) && policy.IsDue(now.AddMilliseconds(300)), "environment events coalesce for 300ms");

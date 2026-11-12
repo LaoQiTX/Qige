@@ -162,11 +162,47 @@ begin
         end;
 end;
 
+procedure RemoveKnownLogonTasks;
+var
+  Service, Folder, Tasks, Task, Actions, Action: Variant;
+  Index: Integer;
+  ExpectedPath, ExpectedArgs: String;
+begin
+  ExpectedPath := ExpandConstant('{app}\Qige.exe');
+  ExpectedArgs := ExpandConstant('--data-dir "{app}\QigeData" --background');
+  try
+    Service := CreateOleObject('Schedule.Service');
+    Service.Connect;
+    Folder := Service.GetFolder('\');
+    Tasks := Folder.GetTasks(1);
+    for Index := Tasks.Count downto 1 do
+    begin
+      Task := Tasks.Item(Index);
+      if Copy(String(Task.Name), 1, 5) = 'Qige-' then
+      begin
+        Actions := Task.Definition.Actions;
+        if (String(Task.Definition.RegistrationInfo.Source) = 'Qige') and (Actions.Count = 1) then
+        begin
+          Action := Actions.Item(1);
+          if (String(Action.Path) = ExpectedPath) and (String(Action.Arguments) = ExpectedArgs) then
+          begin
+            Log('Removing matching Qige logon task: ' + String(Task.Name));
+            Folder.DeleteTask(Task.Name, 0);
+          end;
+        end;
+      end;
+    end;
+  except
+    Log('Qige logon-task cleanup: ' + GetExceptionMessage);
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then
   begin
     RemoveKnownStartup;
+    RemoveKnownLogonTasks;
     if not UninstallSilent then
       MsgBox(ExpandConstant('程序已卸载。您的文件、桌面快捷方式和配置仍保留在：{app}\QigeData'), mbInformation, MB_OK);
   end;

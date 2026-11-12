@@ -794,7 +794,7 @@
                       <StackPanel>
                         <TextBlock Text="启动" FontWeight="SemiBold" Margin="0,0,0,14" />
                         <CheckBox x:Name="StartupBox" Content="登录 Windows 后自动启动栖格" Click="StartupClick" Margin="0" />
-                        <TextBlock x:Name="StartupSettingsNote" Text="登录后在系统托盘运行，沿用当前的抽屉与布局。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="21,8,0,0" />
+                        <TextBlock x:Name="StartupSettingsNote" Text="登录后优先恢复桌面抽屉，在系统托盘运行；点击托盘打开管理面板。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="21,8,0,0" />
                       </StackPanel>
                     </Border>
                     <Border Style="{StaticResource Card}">

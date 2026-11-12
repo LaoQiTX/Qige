@@ -74,6 +74,59 @@ internal static class ResidentChecks
         catch (IOException) { upgradeConflict = true; }
         Check(upgradeConflict && values.Read(oldName) != null && values.Read(startup.ValueName) == "other new command", "startup upgrade preserves both entries on conflict");
 
+        values.Entries.Clear();
+        var tasks = new MemoryStartup();
+        var fastStartup = new StartupRegistration(storage, executable, values, tasks);
+        fastStartup.UpgradeLegacyRegistration(storage);
+        Check(!fastStartup.Enabled && tasks.Entries.Count == 0, "fast startup does not opt users into logon tasks");
+        values.Entries[fastStartup.ValueName] = fastStartup.Command;
+        fastStartup.UpgradeLegacyRegistration(storage);
+        Check(fastStartup.Enabled && values.Entries.Count == 0 && tasks.Read(fastStartup.ValueName) == fastStartup.Command,
+            "an enabled exact Run entry migrates to the immediate per-user logon task");
+        fastStartup.SetEnabled(false);
+        Check(!fastStartup.Enabled && tasks.Entries.Count == 0, "disabling fast startup removes its task and Run entry");
+        tasks.Entries[fastStartup.ValueName] = "modified logon command";
+        var taskConflict = false;
+        try { fastStartup.SetEnabled(true); } catch (IOException) { taskConflict = true; }
+        Check(taskConflict && tasks.Read(fastStartup.ValueName) == "modified logon command", "fast startup preserves modified tasks");
+        tasks.Entries.Clear();
+        var fallback = new StartupRegistration(storage, executable, values, new UnavailableTasks());
+        fallback.SetEnabled(true);
+        Check(fallback.Enabled && values.Read(fallback.ValueName) == fallback.Command, "unavailable Task Scheduler falls back to the matching Run entry");
+        fallback.SetEnabled(false);
+        Check(!fallback.Enabled, "the Run fallback can be disabled while Task Scheduler remains unavailable");
+
+        // Register only an isolated, uniquely named test task, never run it, and
+        // remove it even if an assertion fails. Real user registration is untouched.
+        var taskProbe = new LogonStartup(executable, storage.Root, fastStartup.Command);
+        var probeName = "Qige-test-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            taskProbe.Write(probeName, fastStartup.Command);
+            Check(taskProbe.Read(probeName) == fastStartup.Command, "Task Scheduler accepts and reads the interactive current-user logon definition");
+        }
+        finally { taskProbe.Remove(probeName); }
+        Check(taskProbe.Read(probeName) == null, "the isolated logon task is removed after validation");
+
+        using (var runKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"))
+        using (var approvalKey = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"))
+        {
+            var disabled = new StartupRegistration(storage, executable);
+            try
+            {
+                runKey.SetValue(disabled.ValueName, disabled.Command);
+                approvalKey.SetValue(disabled.ValueName, new byte[] { 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
+                disabled.UpgradeLegacyRegistration(storage);
+                Check(!disabled.Enabled && (string?)runKey.GetValue(disabled.ValueName) == disabled.Command,
+                    "a Run entry disabled in Windows is preserved without enabling a logon task");
+            }
+            finally
+            {
+                disabled.SetEnabled(false);
+                approvalKey.DeleteValue(disabled.ValueName, throwOnMissingValue: false);
+            }
+        }
+
         DesktopMonitor Monitor(string id, int x, int y, int width, int height, uint dpi) =>
             new(id, new(x, y, width, height), new(x, y, width, height - 48), dpi);
         var primary = Monitor("primary", 0, 0, 2560, 1440, 96);
@@ -197,6 +250,12 @@ internal static class ResidentChecks
         public string? Read(string name) { currentName = name; return Entries.GetValueOrDefault(name); }
         public void Write(string name, string value) { currentName = name; Entries[name] = value; }
         public void Remove(string name) { currentName = name; Entries.Remove(name); }
+    }
+    private sealed class UnavailableTasks : IStartupValue
+    {
+        public string? Read(string name) => null;
+        public void Write(string name, string value) => throw new COMException("Task Scheduler unavailable");
+        public void Remove(string name) => throw new COMException("Task Scheduler unavailable");
     }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
     [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);

@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.9">下载 beta.9</a> ·
+  <a href="https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.10">下载 beta.10</a> ·
   <a href="docs/user-guide.md">使用指南</a> ·
   <a href="docs/README.md">项目文档</a> ·
   <a href="docs/roadmap.md">开发计划</a> ·
@@ -23,6 +23,8 @@
 <p align="center">Windows 11 x64 · 安装包 / 便携版 · 中文界面</p>
 
 ## 看看栖格
+
+测试版 **0.1.0-beta.10** 改善登录启动：后台直接恢复抽屉，修复管理面板黑屏及需要再次点击托盘的问题；优先使用当前用户登录任务。真实开机耗时待下次登录验收，详见[本次更新](docs/release-notes.md)。
 
 把快捷方式拖进抽屉，按工作、娱乐或自己的习惯分组。抽屉可以自由摆放、调整大小、吸附对齐，也能折叠成标题条，在鼠标移入时展开。
 
@@ -70,7 +72,7 @@
 
 ## 下载与开始使用
 
-从 **[GitHub Releases](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.9)** 下载 Windows x64 版本：
+从 **[GitHub Releases](https://github.com/LaoQiTX/Qige/releases/tag/v0.1.0-beta.10)** 下载 Windows x64 版本：
 
 | 版本 | 使用方式 |
 | --- | --- |

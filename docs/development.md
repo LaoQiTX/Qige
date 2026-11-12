@@ -62,14 +62,25 @@ Qige.slnx                      解决方案
 ## 发布与素材
 
 ```powershell
-.\publish.ps1 -Version 0.1.0-beta.9
-.\publish.ps1 -Version 0.1.0-beta.9 -Installer
+.\publish.ps1 -Version 0.1.0-beta.10
+.\publish.ps1 -Version 0.1.0-beta.10 -Installer
 pwsh -STA -File scripts/build-brand.ps1
 ```
 
 发布脚本拒绝覆盖已有同版本产物，构建新版本时同步更新版本配置。完整分发规则见[分发与安装](distribution.md)。
 
 品牌 SVG、ICO 以 `assets/brand` 为准。素材导出默认写入 `artifacts/brand`；只有 `-UpdateAssets` 才更新规范资源。品牌预览画板只作为本地导出，不进入项目首页。
+
+## 版本与推送约定
+
+2026-11-10 用户明确要求，后续持续按以下约定执行：
+
+- 继续使用 beta，不切回 alpha。小步修复和增量功能递增 beta 编号；较大功能阶段可按范围调整次版本号，例如 `0.2.0-beta.1`。当前版本为 `0.1.0-beta.10`，不为单纯记录计划发布空版本。
+- 每完成一个可发布的新版本，默认提交并推送 GitHub 代码、版本与文档，同时创建对应 GitHub Release，附安装包、便携 ZIP 和各自 SHA256。已有用户授权，无需每个版本重新询问是否推送或发布。
+- 发布前完成适用检查；版本、源码提交、标签与打包内容保持一致，确认 GitHub CI 和远端附件校验。beta Release 继续标记为预发布，不覆盖既有发行附件。
+- 日常未完成修改不视为新版本。用户另有版本、发布范围或暂停指示时，以当次指示为准。
+
+剩余功能按用户安排推进；不创建自动提醒或后台续做任务。
 
 ## 文档与提交
 

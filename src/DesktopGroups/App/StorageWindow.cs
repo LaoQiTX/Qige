@@ -96,17 +96,25 @@ internal sealed partial class StorageWindow : Window
         catalog.Stores[work.Id].Save();
     }
 
+    internal void Start()
+    {
+        if (background) Initialize();
+        else ShowControl();
+    }
+
+    private bool initializationStarted;
     private void Initialize()
     {
+        // Loaded also fires after hiding/reopening. Never recreate trays/panels.
+        if (initializationStarted || disposed) return;
+        initializationStarted = true;
         try
         {
             if (!demo)
             {
-                startup?.UpgradeLegacyRegistration(storage);
                 var legacy = new LegacyLayoutRecovery(storage);
                 if (legacy.HasRecovery) legacy.Restore();
             }
-            RefreshStartup();
             tray = new ResidentTray(storage.Root, TrayAction);
             tray.EnvironmentChanged += SignalEnvironment;
             foreach (var drawer in catalog.Settings.Drawers.ToArray())
@@ -114,12 +122,20 @@ internal sealed partial class StorageWindow : Window
             initializing = false;
             SelectDrawer(catalog.Settings.SelectedId ?? rows.FirstOrDefault()?.Id ?? "");
             RecreateDesktopWatcher();
+            recoveryPolicy.BeginStartup(DateTimeOffset.UtcNow);
             RecoverDesktop(true); desktopTimer.Start();
             foreach (var pending in catalog.Settings.Drawers.Where(d => d.Removing).ToArray()) _ = RemoveDrawerAsync(pending.Id);
             _ = ScanRecoveryAsync();
             if (demo) Status("样例使用独立文件。关闭面板后可在系统托盘重新打开；选择退出会归还样例内容。");
             else Status(runtimes.Values.FirstOrDefault(r => r.Issue != null)?.Issue ?? "抽屉已就绪。关闭面板后仍在托盘运行。");
-            if (background && tray?.Available == true && runtimes.Values.All(r => r.Issue == null)) Hide();
+            // Paint drawers before doing startup registration or loading shell icons.
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                if (disposed) return;
+                Try(() => startup?.UpgradeLegacyRegistration(storage));
+                RefreshStartup();
+            }));
+            if (background && tray?.Available != true) ShowControl();
         }
         catch (Exception exception) { initializing = false; Status("初始化未完成：" + exception.Message); ShowControl(); }
     }
@@ -207,7 +223,8 @@ internal sealed partial class StorageWindow : Window
         {
             runtime.ItemsSignature = signature;
             runtime.Panel.SetPreparedItems(active.Select(e => (Path.GetFileNameWithoutExtension(e.OriginalPath), runtime.Row.Store.StoredPath(e), (BitmapSource?)null)));
-            _ = LoadRuntimeIconsAsync(runtime, signature);
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                new Action(() => { if (!disposed) _ = LoadRuntimeIconsAsync(runtime, signature); }));
         }
         UpdateRow(runtime);
         if (Selected?.Id == runtime.Definition.Id) FillContents(runtime.Row.Store);
@@ -251,6 +268,7 @@ internal sealed partial class StorageWindow : Window
         }
         finally { recoveringLayout = false; }
         recoveryPolicy.Complete(!failed && !deferred, DateTimeOffset.UtcNow);
+        if (recoveryPolicy.Pending) environmentTimer.Start();
         if (!failed) environmentIssue = "";
         if (!failed && !deferred && runtimes.Values.All(r => r.Panel.IsAttached)) performance.MarkReady();
         var attached = runtimes.Values.Count(r => r.Panel.IsAttached);

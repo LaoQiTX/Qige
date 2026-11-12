@@ -27,9 +27,13 @@ internal static class Program
                 eventArgs.Handled = true;
             };
             var window = new StorageWindow(storage, args.Contains("--demo"), args.Contains("--background"));
+            application.MainWindow = window;
             using var relay = args.Contains("--demo") ? null
                 : new InstanceRelay(storage.Root, () => application.Dispatcher.BeginInvoke(window.ShowControl));
-            return application.Run(window);
+            application.Startup += (_, _) => window.Start();
+            // Run(window) calls Show unconditionally, even when Loaded just hid it.
+            // A resident launch must never create a visible manager surface.
+            return application.Run();
         }
         catch (Exception exception)
         {
@@ -45,8 +49,9 @@ internal static class Program
         // Demo and real sessions have separate locks but share the installation's data root.
         var path = storage.Resolve(args.Contains("--demo") ? "recovery/demo-session.lock" : "recovery/session.lock");
         try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-        catch (IOException)
+        catch (IOException exception)
         {
+            if (args.Contains("--background") && (uint)exception.HResult == 0x80070020) return null;
             if (!args.Contains("--demo") && InstanceRelay.ShowExistingAsync(storage.Root).GetAwaiter().GetResult()) return null;
             throw new IOException("栖格已在运行或数据目录被占用，请从托盘打开管理面板。");
         }

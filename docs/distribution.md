@@ -13,11 +13,11 @@
 ## 构建
 
 ```powershell
-.\publish.ps1 -Version 0.1.0-beta.9
-.\publish.ps1 -Version 0.1.0-beta.9 -Installer
+.\publish.ps1 -Version 0.1.0-beta.10
+.\publish.ps1 -Version 0.1.0-beta.10 -Installer
 
 # 指定已有编译器：
-.\publish.ps1 -Version 0.1.0-beta.9 -Installer -InnoSetupCompiler 'D:\Tools\InnoSetup\ISCC.exe'
+.\publish.ps1 -Version 0.1.0-beta.10 -Installer -InnoSetupCompiler 'D:\Tools\InnoSetup\ISCC.exe'
 ```
 
 默认构建 Release、自带运行时的 x64 包，关闭裁剪和单文件发布。发布编译正式项目，不包含测试与诊断程序。同版本目标已存在时拒绝覆盖。
@@ -39,7 +39,7 @@
 已有完整包时可单独构建：
 
 ```powershell
-.\scripts\build-installer.ps1 -PackageDirectory '.\artifacts\releases\Qige-0.1.0-beta.9-win-x64' -Version '0.1.0-beta.9'
+.\scripts\build-installer.ps1 -PackageDirectory '.\artifacts\releases\Qige-0.1.0-beta.10-win-x64' -Version '0.1.0-beta.10'
 ```
 
 安装采用当前用户权限。新安装默认在安装包所在盘的 `Qige` 文件夹，已有安装优先沿用原路径；向导允许修改，并显示数据目录。开始菜单包含程序和数据文件夹入口，桌面快捷方式可选。
