@@ -100,7 +100,7 @@ internal sealed partial class StorageWindow
         var elapsed = heartbeat.ElapsedMilliseconds;
         maxUiDelay = Math.Max(maxUiDelay, Math.Max(0, elapsed - lastHeartbeat - desktopTimer.Interval.TotalMilliseconds));
         lastHeartbeat = elapsed;
-        if (closing) return;
+        if (closing || maintenanceBusy) return;
         if (++watchdogTicks % 15 == 0)
         {
             if (watcher == null) RecreateDesktopWatcher();
@@ -272,7 +272,7 @@ internal sealed partial class StorageWindow
 
     private async Task<bool> RunStoreAsync(DrawerRuntime runtime, string operation, Func<ShortcutStore, IReadOnlyList<string>> action, bool duringExit = false)
     {
-        if ((closing || exitAfterOperations) && !duringExit) return false;
+        if ((closing || maintenanceBusy || exitAfterOperations) && !duringExit) return false;
         if (runtime.Busy || disposed) { Status("此抽屉仍有操作进行中，请稍后重试。"); return false; }
         runtime.Busy = true; RefreshHealthText(); Status(operation + "中…");
         var success = false;
@@ -303,7 +303,8 @@ internal sealed partial class StorageWindow
     private bool exitAfterOperations;
     internal async Task<bool> RemoveDrawerAsync(string id)
     {
-        if (closing || exitAfterOperations || !runtimes.TryGetValue(id, out var r) || r.Busy) { Status("请等待当前文件操作完成。"); return false; }
+        if (closing || maintenanceBusy || exitAfterOperations || !runtimes.TryGetValue(id, out var r) || r.Busy) { Status("请等待当前文件操作完成。"); return false; }
+        if (!r.Definition.Removing && !await BackupNowAsync("移除抽屉前备份", true)) return false;
         r.Definition.Removing = true; r.Paused = true; catalog.Save();
         if (!await RunStoreAsync(r, "移除前归还", store => store.RestoreAll())) return false;
         // Files have already been returned by the worker; catalog removal only retires metadata.
@@ -311,6 +312,6 @@ internal sealed partial class StorageWindow
     }
     private void DisposeHealth()
     {
-        disposed = true; performanceTimer.Stop(); iconCache.Dispose(); fileWorker.Dispose();
+        disposed = true; backupTimer.Stop(); performanceTimer.Stop(); iconCache.Dispose(); fileWorker.Dispose();
     }
 }

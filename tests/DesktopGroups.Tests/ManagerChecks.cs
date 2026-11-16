@@ -74,6 +74,31 @@ internal static class ManagerChecks
                 Check(window.Panels.SequenceEqual(originalPanels) && window.TrayAvailable,
                     "reopening the manager does not recreate drawers or initialize a second resident session");
                 Check(window.Panels.Count == 2 && window.Panels.All(p => p.IsAttached), "manager attaches both independent demo drawers");
+                Check(((TextBlock)window.FindName("FooterVersionLabel")).Text.Contains(AppBrand.Version), "application version is persistently visible in the manager footer");
+                var menuPanel = window.Panels[0];
+                menuPanel.OpenDrawerMenu(); await Task.Delay(150);
+                var settingsMenu = window.ActiveItemMenu!;
+                Check(settingsMenu.IsOpen && settingsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Tag, "density-Compact")), "drawer ellipsis opens current-drawer settings with icon spacing controls");
+                SaveMenuPreview(settingsMenu, storage.Resolve("drawer-settings-menu.png"));
+                settingsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "density-Compact")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                settingsMenu.IsOpen = false; await Task.Delay(250);
+                Check(menuPanel.Columns == 6 && window.Catalog.Stores["default"].Profile.Density == IconDensity.Compact, "density menu updates native columns and persisted profile");
+                menuPanel.SetDensity(IconDensity.Standard);
+                var menuScale = menuPanel.Width / menuPanel.LogicalWidth;
+                SendMessage(menuPanel.Handle, 0x205, 0, (nint)(((int)(20 * menuScale) << 16) | (int)(40 * menuScale)));
+                await Task.Delay(150);
+                Check(window.ActiveItemMenu?.Items.OfType<MenuItem>().Any(m => Equals(m.Tag, "manual")) == true, "right-clicking the title opens the same drawer settings menu");
+                window.ActiveItemMenu!.IsOpen = false; await Task.Delay(250);
+                await window.WaitForIdleAsync();
+                Check(await window.BackupNowAsync(), "manager creates a complete manual backup through its serialized file worker");
+                var backupService = new BackupService(new AppStorage(Directory.GetParent(window.Catalog.Stores["default"].DesktopPath)!.FullName), window.Catalog.Stores["default"].DesktopPath);
+                var uiBackup = backupService.List(backupService.Options()).First();
+                window.Catalog.Stores["default"].Profile.Density = IconDensity.Spacious;
+                window.Catalog.Stores["default"].Save();
+                Check(await window.RestoreBackupAsync(uiBackup.Directory), "manager restoration backs up current state, returns contents and reloads drawers");
+                await window.WaitForIdleAsync();
+                Check(window.Panels.Count == 2 && window.Catalog.Stores["default"].Profile.Density == IconDensity.Standard
+                    && window.Catalog.Stores["default"].Active.Count == 18 && !window.MaintenanceBusy, "restored manager resumes collection with complete membership and releases the operation fence");
                 var beforeNotifications = window.Panels[0].SurfaceBuilds;
                 for (var i = 0; i < 25; i++)
                 {
@@ -133,6 +158,11 @@ internal static class ManagerChecks
                     && settingsBounds.Right <= ((FrameworkElement)window.Content).ActualWidth
                     && settingsBounds.Bottom <= ((FrameworkElement)window.Content).ActualHeight,
                     "the unified settings dialog fits inside the minimum-size manager window");
+                var backupScroll = (ScrollViewer)window.FindName("SettingsScroll");
+                backupScroll.ScrollToBottom(); window.UpdateLayout();
+                var restoreButtonBounds = ((Button)window.FindName("RestoreBackupButton")).TransformToAncestor(backupScroll).TransformBounds(new Rect(((Button)window.FindName("RestoreBackupButton")).RenderSize));
+                Check(restoreButtonBounds.Top >= 0 && restoreButtonBounds.Bottom <= backupScroll.ActualHeight, "backup recovery controls remain reachable by scrolling at minimum window size");
+                SaveManagerPreview(window, storage.Resolve("manager-backup-settings-minimum.png"));
                 window.Width = 1200; window.Height = 780; window.UpdateLayout();
                 ((RadioButton)window.FindName("AboutSettingsTab")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(((FrameworkElement)window.FindName("AboutSettingsPage")).IsVisible
@@ -251,6 +281,12 @@ internal static class ManagerChecks
                     "preference sync preserves independent geometry, names and shortcut membership");
                 window.SelectDrawer("default");
                 var first = window.Panels[0];
+                first.SetManualMode(); first.ToggleManual(); first.SetDensity(IconDensity.Compact);
+                Click(syncButton); syncLock.IsChecked = false; ((CheckBox)window.FindName("SyncDensityBox")).IsChecked = true; Click(syncConfirm);
+                Check(targetPanel.ManualExpansion && targetPanel.IsExpanded && targetPanel.Density == IconDensity.Compact
+                    && targetStore.Detached().Profile.ManualExpansion && !targetStore.Detached().Profile.ManualCollapsed,
+                    "selected parameter sync copies manual expansion state and icon density to native targets and disk");
+                first.SetDensity(IconDensity.Standard); targetPanel.SetDensity(IconDensity.Standard); targetPanel.SetFolded(false);
                 first.SetFolded(true); first.PointerMove(30, 20); await Task.Delay(180);
                 RightClickItem(first, 1); window.UpdateLayout();
                 var itemMenu = window.ActiveItemMenu;
@@ -280,7 +316,7 @@ internal static class ManagerChecks
                 first.SelectAt(30, 75);
                 Check(first.SelectedIndex >= first.Columns, "scrolled hit testing selects the correct underlying item");
                 first.ApplyScreenLayout(180, 160, 620, 440);
-                Check(first.Columns == 6 && first.LogicalHeight == 440, "resizing recomputes columns and expanded height");
+                Check(first.Columns == 7 && first.LogicalHeight == 440, "resizing recomputes columns and expanded height");
                 first.Configure("常用", 420, 352, true);
                 Check(first.LayoutLocked, "layout locking reaches the native panel");
                 first.RestoreFolded(true);

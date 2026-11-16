@@ -12,7 +12,7 @@ internal sealed partial class StorageWindow
         preferenceSyncSourceId = source.Definition.Id;
         var count = runtimes.Values.Count(r => r != source && !r.Definition.Removing);
         PreferenceSyncSummary.Text = $"将「{source.Definition.Name}」的以下参数应用到其余 {count} 个抽屉。";
-        SyncExpansionBox.IsChecked = SyncLockBox.IsChecked = true;
+        SyncExpansionBox.IsChecked = SyncLockBox.IsChecked = true; SyncDensityBox.IsChecked = false;
         PreferenceSyncError.Visibility = Visibility.Collapsed;
         ConfirmPreferenceSyncButton.IsEnabled = count > 0;
         ShowModal(PreferenceSyncBox);
@@ -27,7 +27,8 @@ internal sealed partial class StorageWindow
                 throw new InvalidOperationException("来源抽屉已不可用，请重新选择。");
             var expansion = SyncExpansionBox.IsChecked == true;
             var locked = SyncLockBox.IsChecked == true;
-            if (!expansion && !locked) throw new InvalidOperationException("请至少选择一项要同步的参数。");
+            var density = SyncDensityBox.IsChecked == true;
+            if (!expansion && !locked && !density) throw new InvalidOperationException("请至少选择一项要同步的参数。");
             var targets = runtimes.Values.Where(r => r != source && !r.Definition.Removing).ToArray();
             if (targets.Length == 0) throw new InvalidOperationException("当前没有其他可同步的抽屉。");
             if (source.Busy || source.Panel.IsInteracting || targets.Any(r => r.Busy || r.Panel.IsInteracting))
@@ -42,20 +43,22 @@ internal sealed partial class StorageWindow
                 var profile = target.Row.Store.Profile;
                 var previousFolded = profile.Folded;
                 var previousLocked = profile.Locked;
-                if (expansion) profile.Folded = foldedValue;
+                var previousManual = profile.ManualExpansion; var previousCollapsed = profile.ManualCollapsed; var previousDensity = profile.Density;
+                if (expansion) { profile.Folded = foldedValue; profile.ManualExpansion = source.Row.Store.Profile.ManualExpansion; profile.ManualCollapsed = source.Row.Store.Profile.ManualCollapsed; }
+                if (density) profile.Density = source.Row.Store.Profile.Density;
                 if (locked) profile.Locked = lockedValue;
                 try { target.Row.Store.Save(); }
                 catch (Exception error)
                 {
                     profile.Folded = previousFolded;
-                    profile.Locked = previousLocked;
+                    profile.Locked = previousLocked; profile.ManualExpansion = previousManual; profile.ManualCollapsed = previousCollapsed; profile.Density = previousDensity;
                     failures.Add(target.Definition.Name + "：" + error.Message);
                     continue;
                 }
                 saved++;
                 // Keep temporary on-screen geometry and each persisted layout independent.
                 target.Panel.Configure(target.Definition.Name, target.Panel.LogicalWidth, target.Panel.LogicalHeight, profile.Locked);
-                if (expansion) target.Panel.RestoreFolded(profile.Folded);
+                target.Panel.RestorePreferences(profile);
                 UpdateRow(target);
             }
             UpdateDetail();

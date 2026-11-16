@@ -17,7 +17,7 @@ internal sealed partial class StorageWindow : Window
 {
     private readonly AppStorage storage;
     private readonly bool demo, background;
-    private readonly DrawerCatalog catalog;
+    private DrawerCatalog catalog;
     private readonly Dictionary<string, DrawerRuntime> runtimes = [];
     private readonly ObservableCollection<DrawerRow> rows = [];
     private readonly SnapGuides guides = new();
@@ -27,6 +27,7 @@ internal sealed partial class StorageWindow : Window
     private readonly StartupRegistration? startup;
     private FileSystemWatcher? watcher;
     private ResidentTray? tray;
+    private bool maintenanceBusy;
     private bool initializing = true, updating, closing, exitRequested, sessionEnding;
     private string lastConnection = "";
     private int syncRetries;
@@ -50,9 +51,10 @@ internal sealed partial class StorageWindow : Window
         if (!demo) startup = new StartupRegistration(storage);
         InitializeComponent();
         InitializeHealth();
+        InitializeBackups();
         Title = demo ? "栖格 Qige · 管理面板样例" : $"栖格 Qige · 抽屉管理 · {AppBrand.Version}";
         Icon = BitmapFrame.Create(AppBrand.IconUri); BrandIcon.Source = Icon;
-        VersionLabel.Text = $"QIGE / {AppBrand.Version}";
+        VersionLabel.Text = FooterVersionLabel.Text = $"QIGE / {AppBrand.Version}";
         SettingsDataPath.Text = this.storage.Root;
         if (demo) StartupSettingsNote.Text = "隔离样例不修改 Windows 启动项，请在正式模式中设置。";
         InitializeManagerViews();
@@ -149,7 +151,7 @@ internal sealed partial class StorageWindow : Window
             paths => !demo && QueueAddPaths(definition.Id, paths),
             paths =>
             {
-                if (closing || demo || definition.Removing || runtime?.Busy == true) return false;
+                if (closing || maintenanceBusy || demo || definition.Removing || runtime?.Busy == true) return false;
                 try { catalog.EnsureOwnership(definition.Id, paths); return store.CanAccept(paths); }
                 catch (Exception exception) when (exception is IOException or ArgumentException) { return false; }
             },
@@ -160,21 +162,22 @@ internal sealed partial class StorageWindow : Window
             });
         runtime = new DrawerRuntime(definition, row, panel);
         panel.Configure(definition.Name, store.Profile.Width, store.Profile.Height, store.Profile.Locked);
-        panel.RestoreFolded(store.Profile.Folded);
+        panel.RestorePreferences(store.Profile);
         panel.FoldedChanged += folded =>
         {
-            store.Profile.Folded = folded; if (!runtime.Busy) store.Save(); UpdateRow(runtime);
+            store.Profile.Folded = folded; store.Profile.ManualExpansion = false; if (!runtime.Busy) store.Save(); UpdateRow(runtime);
             if (Selected?.Id == definition.Id)
             {
-                AlwaysModeButton.IsChecked = !folded; HoverModeButton.IsChecked = folded;
+                AlwaysModeButton.IsChecked = !folded; HoverModeButton.IsChecked = folded && !store.Profile.ManualExpansion; ManualModeButton.IsChecked = store.Profile.ManualExpansion;
                 SelectedSubtitle.Text = $"{runtime.Row.Placement} · {runtime.Row.State}";
             }
             RefreshOverview();
         };
+        panel.PreferencesChanged += () => SavePanelPreferences(runtime);
+        panel.DrawerMenuRequested += () => OpenDrawerSettingsMenu(runtime);
         panel.TransformLayout = (rect, edges) => Transform(runtime, rect, edges);
         panel.InteractionEnded += () => { runtime.Snap = new(); guides.Hide(); };
         panel.LayoutCommitted += () => { SaveLayout(runtime); UpdateDetail(); };
-        panel.ManageRequested += () => { SelectDrawer(definition.Id); ShowControl(); };
         panel.ItemMenuRequested += path => OpenDrawerItemMenu(runtime, path);
         panel.Disposed += () => { if (itemMenu != null) itemMenu.IsOpen = false; };
         store.Changed += () => RefreshItems(runtime);
@@ -207,7 +210,7 @@ internal sealed partial class StorageWindow : Window
     private void SaveLayout(DrawerRuntime runtime)
     {
         if (!runtime.Panel.IsAttached || recoveringLayout) return;
-        var rect = runtime.Panel.ScreenBounds; var profile = runtime.Row.Store.Profile;
+        var rect = runtime.Panel.AnchorBounds; var profile = runtime.Row.Store.Profile;
         profile.X = (int)Math.Round(rect.X); profile.Y = (int)Math.Round(rect.Y);
         profile.Width = runtime.Panel.LogicalWidth; profile.Height = runtime.Panel.LogicalHeight;
         if (!runtime.Busy) runtime.Row.Store.Save();
@@ -241,7 +244,7 @@ internal sealed partial class StorageWindow : Window
     }
     private void RecoverDesktop(bool force)
     {
-        if (closing) return;
+        if (closing || maintenanceBusy) return;
         tray?.EnsureAvailable();
         var deferred = false;
         var failed = false;
@@ -284,7 +287,7 @@ internal sealed partial class StorageWindow : Window
     private async void Synchronize()
     {
         syncTimer.Stop();
-        if (closing) return;
+        if (closing || maintenanceBusy) return;
         var retry = false;
         foreach (var runtime in runtimes.Values.Where(r => r.Started && !r.Paused && !r.Definition.Removing).ToArray())
         {
@@ -295,7 +298,7 @@ internal sealed partial class StorageWindow : Window
     }
     private void WatchChanged(object sender, FileSystemEventArgs e) => Dispatcher.BeginInvoke(() =>
     {
-        if (closing || !ShortcutInfo.IsShortcut(e.FullPath)) return;
+        if (closing || maintenanceBusy || !ShortcutInfo.IsShortcut(e.FullPath)) return;
         syncRetries = 0; syncTimer.Stop(); syncTimer.Start();
     });
     private void Issues(DrawerRuntime runtime, IReadOnlyList<string> issues, bool clear = true)
@@ -331,7 +334,7 @@ internal sealed partial class StorageWindow : Window
         {
             SelectedTitle.Text = row.Name; NameBox.Text = row.Name;
             LockBox.IsChecked = row.Store.Profile.Locked;
-            AlwaysModeButton.IsChecked = !row.Store.Profile.Folded; HoverModeButton.IsChecked = row.Store.Profile.Folded;
+            AlwaysModeButton.IsChecked = !row.Store.Profile.Folded; HoverModeButton.IsChecked = row.Store.Profile.Folded && !row.Store.Profile.ManualExpansion; ManualModeButton.IsChecked = row.Store.Profile.ManualExpansion;
             ApplyLayoutButton.IsEnabled = !row.Store.Profile.Locked;
             foreach (var box in new[] { XBox, YBox, WidthBox, HeightBox }) box.IsEnabled = !row.Store.Profile.Locked;
             if (SelectedRuntime is { } runtime) { FillGeometry(runtime); FillIssue(runtime); }
@@ -383,7 +386,7 @@ internal sealed partial class StorageWindow : Window
     }
     internal void CreateDrawer(string name)
     {
-        if (closing || exitAfterOperations) throw new InvalidOperationException("正在退出，请等待文件归还完成。");
+        if (closing || maintenanceBusy || exitAfterOperations) throw new InvalidOperationException("正在退出，请等待文件归还完成。");
         var definition = catalog.Create(name); AddRuntime(definition);
         DismissModal();
         SelectDrawer(definition.Id); RecoverDesktop(false); Status($"已创建「{definition.Name}」，可到桌面拖动和调整边缘。");
@@ -440,7 +443,7 @@ internal sealed partial class StorageWindow : Window
     internal bool QueueAddPaths(string id, IReadOnlyList<string> paths)
     {
         var r = runtimes[id];
-        if (closing || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing) return false;
+        if (closing || maintenanceBusy || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing) return false;
         catalog.EnsureOwnership(id, paths);
         if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(paths, StringComparer.OrdinalIgnoreCase).Any()))
         { Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false; }
@@ -531,6 +534,7 @@ internal sealed partial class StorageWindow : Window
         if (exitReady || sessionEnding) { DisposeRuntime(); return; }
         e.Cancel = true;
         if (restoringExit) return;
+        if (maintenanceBusy) { exitRequested = false; Status("备份或恢复正在进行，请完成后再退出。"); return; }
         if (BusyOperations > 0)
         {
             exitAfterOperations = true; Status("正在完成文件操作，完成后自动归还并退出。"); return;

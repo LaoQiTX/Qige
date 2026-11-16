@@ -18,6 +18,7 @@ internal static class Program
             storage.EnsureWritable();
             using var sessionLock = AcquireSession(storage, args);
             if (sessionLock == null) return 0;
+            if (!args.Contains("--demo")) BackupService.RecoverInterrupted(storage);
             LegacyDataMigration.Run(storage);
             storage.ConfigureTemporaryDirectory();
             var application = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };

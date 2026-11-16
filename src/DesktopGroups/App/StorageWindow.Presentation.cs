@@ -50,7 +50,7 @@ internal sealed partial class StorageWindow
     {
         var m = MonitorFor(row);
         var screen = m == null ? "等待显示器" : $"显示器 {managerMonitors.ToList().IndexOf(m) + 1}";
-        return $"{screen} · {(row.Store.Profile.Folded ? "悬停展开" : "常驻展开")}";
+        return $"{screen} · {(row.Store.Profile.ManualExpansion ? "手动展开" : row.Store.Profile.Folded ? "悬停展开" : "常驻展开")}";
     }
     private void RefreshManagerViews()
     {
@@ -153,6 +153,7 @@ internal sealed partial class StorageWindow
         StudioSubtitle.Text = Selected == null ? "从左侧选择抽屉，查看内容与操作" : $"桌面整理 · {currentContents.Count} 个入口 · {contents.Length} 项匹配";
     }
     private void AlwaysModeClick(object sender, RoutedEventArgs e) => SetFoldMode(false);
+    private void ManualModeClick(object sender, RoutedEventArgs e) => Try(() => { SelectedRuntime?.Panel.SetManualMode(); UpdateDetail(); });
     private void HoverModeClick(object sender, RoutedEventArgs e) => SetFoldMode(true);
     private void SetFoldMode(bool folded) => Try(() => { SelectedRuntime?.Panel.SetFolded(folded); UpdateDetail(); });
     private void OpenItemClick(object sender, RoutedEventArgs e) => Try(() =>

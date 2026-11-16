@@ -10,7 +10,7 @@ internal sealed partial class StorageWindow
 {
     internal void ShowSettings(SettingsSection section = SettingsSection.General)
     {
-        RefreshStartup();
+        RefreshStartup(); RefreshBackupControls(); _ = RefreshBackupListAsync();
         SnapBox.IsChecked = catalog.Settings.SnapEnabled;
         SelectSettingsSection(section);
         ShowModal(SettingsBox);

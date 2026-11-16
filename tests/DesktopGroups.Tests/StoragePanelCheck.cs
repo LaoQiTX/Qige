@@ -85,6 +85,7 @@ internal static class StoragePanelCheck
             if (panel.IsExpanded || DesktopAttachment.ReadState(panel.Handle).Height != collapsed.Height)
                 throw new InvalidOperationException("离开没有立即折叠。");
             await CheckHoverResizeAsync(panel);
+            await CheckManualExpansionAsync(panel, storage);
             var newShortcut = Path.Combine(store.DesktopPath, "拖入样例.url");
             File.WriteAllText(newShortcut, "[InternetShortcut]\r\nURL=https://example.com/drop-check\r\n");
             using var dragData = new ShellSampleData(newShortcut);
@@ -169,6 +170,48 @@ internal static class StoragePanelCheck
             var issues = store.RestoreAll();
             if (issues.Count > 0) throw new InvalidOperationException(string.Join("；", issues));
         }
+    }
+
+    private static async Task CheckManualExpansionAsync(ShortcutPanel panel, AppStorage storage)
+    {
+        var prior = panel.AnchorBounds;
+        panel.SetManualMode();
+        var monitor = DesktopPlacement.Capture().First(); var scale = monitor.Dpi / 96d;
+        panel.ApplyScreenLayout(monitor.Work.X + 30, monitor.Work.Bottom - (int)Math.Round(46 * scale), 420, 352);
+        await FinishAnimation(panel);
+        if (!panel.ExpandsUpward || panel.IsExpanded) throw new InvalidOperationException("底部折叠抽屉没有选择向上展开。");
+        var anchor = panel.AnchorBounds;
+        panel.PointerMove((int)(30 * scale), (int)(20 * scale));
+        if (panel.IsExpanded) throw new InvalidOperationException("手动折叠被悬停自动打开。");
+        SendMessage(panel.Handle, 0x203, 0, MousePoint((int)(70 * scale), (int)(23 * scale)));
+        await FinishAnimation(panel);
+        var expanded = panel.ScreenBounds;
+        if (!panel.IsExpanded || Math.Abs(expanded.Bottom - (anchor.Y + 46 * scale)) > 2 || expanded.Y < monitor.Work.Y)
+            throw new InvalidOperationException("向上展开改变了标题锚点或超出工作区。");
+        panel.PointerLeave(); await FinishAnimation(panel);
+        if (!panel.IsExpanded) throw new InvalidOperationException("手动展开在离开后自动收起。");
+        panel.SelectAt((int)(30 * scale), (int)(28 * scale));
+        if (panel.SelectedIndex != 0) throw new InvalidOperationException("向上展开后的图标命中偏移。");
+        panel.SavePreview(storage.Resolve("checks/StoragePanel/upward-expanded.png"));
+        panel.SetDensity(IconDensity.Compact);
+        if (panel.Columns != 6) throw new InvalidOperationException("紧凑模式没有在同宽容纳六列。");
+        panel.SetDensity(IconDensity.Standard);
+        if (panel.Columns != 5) throw new InvalidOperationException("标准模式没有在同宽容纳五列。");
+        panel.SetDensity(IconDensity.Spacious);
+        if (panel.Columns != 4) throw new InvalidOperationException("宽松模式列数错误。");
+        panel.SetDensity(IconDensity.Standard);
+        SendMessage(panel.Handle, 0x203, 0, MousePoint((int)(70 * scale), panel.Height - (int)(23 * scale)));
+        await FinishAnimation(panel);
+        if (panel.IsExpanded || Math.Abs(panel.AnchorBounds.Y - anchor.Y) > 1) throw new InvalidOperationException("双击标题不能在原位收起抽屉。");
+        panel.SavePreview(storage.Resolve("checks/StoragePanel/upward-collapsed.png"));
+        SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - (int)(24 * scale), (int)(23 * scale)));
+        await FinishAnimation(panel);
+        if (!panel.IsExpanded) throw new InvalidOperationException("折叠按钮不能手动展开。");
+        panel.RestorePreferences(new ShortcutProfile { Folded = true, ManualExpansion = true, ManualCollapsed = false });
+        panel.EnsureAttached(true);
+        if (!panel.IsExpanded || !panel.ManualExpansion) throw new InvalidOperationException("手动展开状态未恢复。");
+        panel.SetFolded(true); panel.ApplyScreenLayout((int)prior.X, (int)prior.Y, 420, 352); await FinishAnimation(panel);
+        Console.WriteLine("PASS manual button and title double-click, hover-independent state, bottom-anchored upward animation and icon hit testing; compact/standard/spacious columns 6/5/4");
     }
 
     private static async Task FinishAnimation(ShortcutPanel panel)

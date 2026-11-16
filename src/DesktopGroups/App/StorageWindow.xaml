@@ -644,9 +644,10 @@
                   <StackPanel>
                     <TextBlock Text="展开与锁定" FontWeight="SemiBold" Margin="0,0,0,12" />
                     <Border Background="#E9EEF5" CornerRadius="7" Padding="2" Margin="0,0,0,12">
-                      <UniformGrid Columns="2">
+                      <UniformGrid Columns="3">
                         <RadioButton x:Name="AlwaysModeButton" GroupName="FoldMode" Content="常驻展开" Style="{StaticResource Segment}" Padding="8,6" Click="AlwaysModeClick" />
                         <RadioButton x:Name="HoverModeButton" GroupName="FoldMode" Content="悬停展开" Style="{StaticResource Segment}" Padding="8,6" Click="HoverModeClick" />
+                        <RadioButton x:Name="ManualModeButton" GroupName="FoldMode" Content="手动展开" Style="{StaticResource Segment}" Padding="8,6" Click="ManualModeClick" />
                       </UniformGrid>
                     </Border>
                     <CheckBox x:Name="LockBox" Content="锁定位置，避免误拖动" Click="LockClick" Margin="0" />
@@ -708,6 +709,7 @@
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <TextBlock x:Name="StatusLabel" Text="关闭面板后，桌面抽屉继续运行。" Foreground="#64748B" FontSize="10" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" AutomationProperties.LiveSetting="Polite" />
+          <TextBlock x:Name="FooterVersionLabel" Grid.Column="2" Foreground="#94A3B8" FontFamily="Consolas" FontSize="10" Margin="16,0,0,0" VerticalAlignment="Center" />
           <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
             <Button x:Name="SettingsButton" Click="SettingsClick" Style="{StaticResource QuietButton}" Padding="10,3" FontSize="11" ToolTip="设置（Ctrl+,）" AutomationProperties.Name="设置">
               <StackPanel Orientation="Horizontal">
@@ -723,7 +725,8 @@
           <StackPanel>
             <TextBlock Text="同步抽屉参数" FontSize="19" FontWeight="SemiBold" />
             <TextBlock x:Name="PreferenceSyncSummary" TextWrapping="Wrap" Foreground="#64748B" LineHeight="20" Margin="0,12,0,20" />
-            <CheckBox x:Name="SyncExpansionBox" Content="展开方式（常驻 / 悬停）" IsChecked="True" Margin="0,0,0,16" />
+            <CheckBox x:Name="SyncExpansionBox" Content="展开方式（常驻 / 悬停 / 手动）" IsChecked="True" Margin="0,0,0,16" />
+            <CheckBox x:Name="SyncDensityBox" Content="图标布局密度" Margin="0,0,0,16" />
             <CheckBox x:Name="SyncLockBox" Content="锁定状态" IsChecked="True" Margin="0,0,0,20" />
             <TextBlock Text="仅同步勾选的参数。各抽屉的名称、内容、位置与尺寸保持独立；以后修改仍只影响当前抽屉。" TextWrapping="Wrap" Foreground="#94A3B8" FontSize="11" LineHeight="19" />
             <TextBlock x:Name="PreferenceSyncError" Visibility="Collapsed" Foreground="#A33F3F" TextWrapping="Wrap" Margin="0,14,0,0" />
@@ -777,7 +780,7 @@
               </Grid.ColumnDefinitions>
               <Border BorderBrush="#F1F5F9" BorderThickness="0,0,1,0" Padding="0,0,18,0">
                 <DockPanel>
-                  <TextBlock DockPanel.Dock="Bottom" Text="设置即时保存&#x0a;适用于全部抽屉" Foreground="#94A3B8" FontSize="10" LineHeight="18" Margin="8,16,0,0" />
+                  <TextBlock DockPanel.Dock="Bottom" Text="通用偏好即时保存&#x0a;备份参数需点击保存" Foreground="#94A3B8" FontSize="10" LineHeight="18" Margin="8,16,0,0" />
                   <StackPanel>
                     <RadioButton x:Name="GeneralSettingsTab" GroupName="SettingsSection" Content="通用设置" Style="{StaticResource Segment}" Padding="10,11" Margin="0,0,0,5" Click="GeneralSettingsClick" />
                     <RadioButton x:Name="RecoverySettingsTab" GroupName="SettingsSection" Content="运行与恢复" Style="{StaticResource Segment}" Padding="10,11" Margin="0,0,0,5" Click="RecoverySettingsClick" />
@@ -802,6 +805,36 @@
                         <TextBlock Text="吸附与对齐" FontWeight="SemiBold" Margin="0,0,0,14" />
                         <CheckBox x:Name="SnapBox" Content="启用屏幕与抽屉之间的吸附" Click="SnapClick" Margin="0" />
                         <TextBlock Text="对齐边缘与中心线时显示辅助线；按住 Alt 可临时自由拖动。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="21,8,0,0" />
+                      </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                      <StackPanel>
+                        <TextBlock Text="备份与恢复" FontWeight="SemiBold" Margin="0,0,0,14" />
+                        <CheckBox x:Name="AutoBackupBox" Content="自动备份配置与托管快捷方式" Margin="0,0,0,12" />
+                        <TextBlock Text="备份目录" FontSize="11" Foreground="#64748B" Margin="0,0,0,6" />
+                        <DockPanel Margin="0,0,0,12">
+                          <Button DockPanel.Dock="Right" Content="选择…" Click="ChooseBackupDirectoryClick" Margin="8,0,0,0" />
+                          <TextBox x:Name="BackupDirectoryBox" AutomationProperties.Name="备份目录" />
+                        </DockPanel>
+                        <WrapPanel Margin="0,0,0,12">
+                          <TextBlock Text="间隔（分钟）" VerticalAlignment="Center" FontSize="11" />
+                          <TextBox x:Name="BackupIntervalBox" Width="65" Margin="8,0,16,0" AutomationProperties.Name="备份间隔分钟" />
+                          <TextBlock Text="保留自动备份" VerticalAlignment="Center" FontSize="11" />
+                          <TextBox x:Name="BackupRetainBox" Width="55" Margin="8,0,0,0" AutomationProperties.Name="自动备份保留数量" />
+                        </WrapPanel>
+                        <TextBlock Text="默认每小时备份，配置变化稳定两分钟后也会备份。手动及恢复前的备份长期保留；外部文件不在备份范围内。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,12" />
+                        <WrapPanel>
+                          <Button Content="保存备份设置" Click="SaveBackupSettingsClick" Margin="0,0,8,8" />
+                          <Button x:Name="BackupNowButton" Content="立即备份" Click="BackupNowClick" Margin="0,0,8,8" />
+                          <Button Content="打开备份目录" Click="OpenBackupFolderClick" Margin="0,0,8,8" />
+                        </WrapPanel>
+                        <TextBlock x:Name="BackupStatusLabel" Foreground="#64748B" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="0,4,0,12" AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock Text="选择当前数据目录的备份以恢复" FontSize="11" Foreground="#64748B" Margin="0,0,0,6" />
+                        <ComboBox x:Name="BackupList" DisplayMemberPath="Label" MinHeight="32" AutomationProperties.Name="可恢复备份" />
+                        <WrapPanel Margin="0,10,0,0">
+                          <Button Content="刷新列表" Click="RefreshBackupsClick" Margin="0,0,8,0" />
+                          <Button x:Name="RestoreBackupButton" Content="恢复所选备份…" Click="RestoreBackupClick" IsEnabled="False" />
+                        </WrapPanel>
                       </StackPanel>
                     </Border>
                     <TextBlock Text="关闭管理面板时，可选择继续在托盘运行，或归还全部内容后退出。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="19" />

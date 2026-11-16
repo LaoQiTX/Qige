@@ -63,6 +63,14 @@ internal static class DrawerLayoutChecks
         try { reopened.Create(" \t"); } catch (ArgumentException) { refused = true; }
         Check(refused, "drawer names reject blank input");
 
+        var down = DesktopPlacement.ExpansionAt(100, 352, new(0, 0, 1920, 1040), 96);
+        Check(!down.Upward && down.Height == 352, "drawer expands downward when its full height fits");
+        var up = DesktopPlacement.ExpansionAt(994, 352, new(0, 0, 1920, 1040), 96);
+        Check(up.Upward && up.Height == 352, "bottom drawer chooses upward expansion around its title anchor");
+        var constrained = DesktopPlacement.ExpansionAt(500, 900, new(0, 0, 1920, 1040), 96);
+        Check(constrained.Upward && constrained.Height == 546, "when neither side fits, expansion uses the larger side without leaving the work area");
+        var negative = DesktopPlacement.ExpansionAt(-69, 352, new(-1920, -1080, 1920, 1080), 144);
+        Check(negative.Upward && negative.Height == 352, "upward placement handles negative monitor coordinates and 150 percent DPI");
         var workArea = new LayoutRect(0, 0, 1920, 1040);
         var session = new LayoutSnapSession();
         var snapped = session.Resolve(new(7, 9, 420, 352), workArea, [], true, false);

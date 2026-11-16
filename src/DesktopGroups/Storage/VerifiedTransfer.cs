@@ -92,6 +92,32 @@ internal static class VerifiedTransfer
             throw new Win32Exception(Marshal.GetLastWin32Error(), "副本已保存，但源文件未能移除；恢复记录已保留。");
     }
 
+    internal static Dictionary<string, string> NamedStreamHashes(string path)
+    {
+        ValidatePath(path);
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        var search = FindFirstStream(path, 0, out var stream, 0);
+        if (search == -1)
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error is 38 or 1 or 87) return hashes;
+            throw new Win32Exception(error);
+        }
+        try
+        {
+            do
+            {
+                if (stream.Name == "::$DATA") continue;
+                if (!stream.Name.StartsWith(':') || !stream.Name.EndsWith(":$DATA") || stream.Name.IndexOfAny(['\\', '/']) >= 0
+                    || stream.Size > 4 * 1024 * 1024 || hashes.Count >= 32) throw new IOException("备份不支持此备用数据流名称或大小。");
+                hashes.Add(stream.Name, Hash(path + stream.Name));
+            } while (FindNextStream(search, out stream));
+            if (Marshal.GetLastWin32Error() != 38) throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        finally { FindClose(search); }
+        return hashes;
+    }
+
     // Preserve named streams, including Windows' download origin marker.
     private static void CopyStreams(string source, string destination)
     {

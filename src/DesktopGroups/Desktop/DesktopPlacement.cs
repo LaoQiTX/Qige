@@ -48,6 +48,15 @@ internal static class DesktopPlacement
             Math.Clamp(y, target.Work.Y, Math.Max(target.Work.Y, target.Work.Bottom - height)), target.Dpi, widthDip, heightDip);
     }
 
+    internal static (bool Upward, double Height) ExpansionAt(int anchorY, double height, ScreenArea work, uint dpi)
+    {
+        var scale = dpi / 96d;
+        var below = Math.Max(46, (work.Bottom - anchorY) / scale);
+        var above = Math.Max(46, (anchorY - work.Y) / scale + 46);
+        var upward = height > below && above > below;
+        return (upward, Math.Min(height, upward ? above : below));
+    }
+
     private static long Intersection(int x, int y, double widthDip, double heightDip, DesktopMonitor monitor)
     {
         var width = (int)Math.Round(widthDip * monitor.Dpi / 96d);
