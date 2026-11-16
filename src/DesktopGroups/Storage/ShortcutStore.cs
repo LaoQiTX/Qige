@@ -150,13 +150,51 @@ internal sealed class ShortcutStore
         return issues;
     }
 
-    public IReadOnlyList<string> RestoreAll()
+    // Absence must be distinguished from permission failures and disconnected roots.
+    internal bool IsMissing(StoredShortcut entry)
+    {
+        bool Exists(string path)
+        {
+            VerifiedTransfer.ValidatePath(path);
+            try { _ = File.GetAttributes(path); return true; }
+            catch (FileNotFoundException) { return false; }
+            catch (DirectoryNotFoundException) { return false; }
+        }
+        if (Exists(entry.OriginalPath) || Exists(StoredPath(entry))
+            || entry.PendingRelative != null && Exists(storage.Resolve(entry.PendingRelative))) return false;
+        // The two roots must still be online and readable before absence is accepted.
+        foreach (var root in new[] { desktop, storage.Root })
+        {
+            VerifiedTransfer.ValidatePath(root);
+            using var files = Directory.EnumerateFileSystemEntries(root).GetEnumerator();
+            _ = files.MoveNext();
+        }
+        return true;
+    }
+
+    internal void DismissMissing(string id)
+    {
+        var index = Profile.Entries.FindIndex(e => e.Id == id);
+        if (index < 0) throw new IOException("此记录已移除，请重新检查。");
+        var entry = Profile.Entries[index];
+        if (!IsMissing(entry)) throw new IOException("文件已出现或仍有待处理副本，未移除记录，请重新检查。");
+        // Retire membership only. Preserve paths, history and pending metadata; never delete files.
+        Profile.Entries.RemoveAt(index); Profile.Ungrouped.Add(entry);
+        try { Save(); }
+        catch { Profile.Ungrouped.Remove(entry); Profile.Entries.Insert(index, entry); throw; }
+        Changed?.Invoke();
+    }
+
+    public IReadOnlyList<string> RestoreAll(bool allowMissing = false)
     {
         var issues = new List<string>();
         foreach (var entry in Profile.Entries.ToArray())
         {
             try
             {
+                // Exit may leave an externally removed shortcut recorded for later inspection.
+                // A conflict, unreadable root or pending copy still requires recovery.
+                if (allowMissing && IsMissing(entry)) continue;
                 RestoreEntry(entry);
                 if (entry.RemoveAfterRestore) ForgetRestored(entry);
             }

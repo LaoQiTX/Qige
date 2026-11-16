@@ -245,6 +245,23 @@ internal sealed partial class StorageWindow
         });
         await ScanRecoveryAsync();
     }
+    private async void DismissMissingProblemClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: RecoveryProblem problem } || !problem.CanDismiss) return;
+        if (closing || maintenanceBusy || exitAfterOperations || BusyOperations > 0) return;
+        var answer = MessageBox.Show(this, $"将「{problem.Name}」从抽屉中移除？\n\n仅适用于已卸载或删除的入口。操作会再次检查文件是否缺失，保留历史记录及已有副本，不删除文件。", "移除失效记录", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer == MessageBoxResult.OK) await DismissMissingProblemAsync(problem);
+    }
+    internal async Task<bool> DismissMissingProblemAsync(RecoveryProblem problem)
+    {
+        if (!problem.CanDismiss || !runtimes.TryGetValue(problem.DrawerId, out var runtime)) return false;
+        var success = await RunStoreAsync(runtime, "移除失效记录", store =>
+        {
+            store.DismissMissing(problem.EntryId); return [];
+        });
+        await ScanRecoveryAsync();
+        return success;
+    }
     private async void ExportProblemClick(object sender, RoutedEventArgs e)
     {
         if (closing || exitAfterOperations) return;

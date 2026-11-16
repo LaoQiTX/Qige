@@ -3,7 +3,7 @@ using System.IO;
 namespace DesktopGroups;
 
 internal sealed record RecoveryProblem(string DrawerId, string DrawerName, string EntryId, string Name,
-    string Message, string OriginalPath, string StoredPath, string Phase)
+    string Message, string OriginalPath, string StoredPath, string Phase, bool CanDismiss = false)
 {
     public string Location => $"桌面：{OriginalPath}\n收纳：{StoredPath}";
 }
@@ -17,11 +17,18 @@ internal static class RecoveryInspection
         foreach (var entry in store.Profile.Entries)
         {
             string? message = null;
+            var canDismiss = false;
             var path = store.StoredPath(entry);
             try
             {
                 var original = File.Exists(entry.OriginalPath); var stored = File.Exists(path);
-                if (!original && !stored) message = "桌面和收纳位置均未找到文件。记录已保留，请检查磁盘或备份。";
+                if (!original && !stored)
+                {
+                    canDismiss = store.IsMissing(entry);
+                    message = canDismiss
+                        ? "桌面和收纳文件均已不存在，不会阻止退出。若已卸载或删除，可移除失效记录；历史记录仍保留。"
+                        : "文件未找到，但仍有待处理副本，请检查后重试。";
+                }
                 else if (entry.PendingRelative != null || entry.Phase is "Collecting" or "Restoring" or "Updating")
                     message = "上次文件操作尚未完成，需要检查并继续恢复。";
                 else if (original && stored)
@@ -34,7 +41,7 @@ internal static class RecoveryInspection
             }
             catch (Exception e) { message = "检查未完成：" + e.Message; }
             if (message != null) problems.Add(new(id, name, entry.Id, Path.GetFileName(entry.OriginalPath), message,
-                entry.OriginalPath, path, entry.Phase));
+                entry.OriginalPath, path, entry.Phase, canDismiss));
         }
         return problems;
     }

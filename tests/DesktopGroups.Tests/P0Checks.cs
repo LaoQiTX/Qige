@@ -134,7 +134,37 @@ internal static class P0Checks
             "successfully restored files disappear from recovery inspection");
         File.Delete(original);
         problems = await files.Run(() => RecoveryInspection.Inspect("default", "常用", store.Detached()));
-        Check(problems.Count == 1 && problems[0].Message.Contains("均未找到"), "missing files retain an actionable recovery record");
+        Check(problems.Count == 1 && problems[0].CanDismiss, "missing files retain an actionable recovery record with a dismissal action");
+        Check(store.RestoreAll(allowMissing: true).Count == 0 && store.Detached().Profile.Entries.Any(e => e.Id == entry.Id),
+            "missing shortcuts do not block exit and remain recorded across restart");
+        Check(store.RestoreAll().Count == 1, "explicit restoration still reports missing content");
+        File.WriteAllText(original, collision);
+        var refusedDismissal = false;
+        try { store.DismissMissing(entry.Id); } catch (IOException) { refusedDismissal = true; }
+        Check(refusedDismissal && File.ReadAllText(original) == collision && store.Profile.Entries.Count == 1,
+            "dismissal rechecks stale missing records and preserves a reappearing desktop file");
+        File.Delete(original);
+        entry = store.Profile.Entries.Single(e => e.Id == entry.Id);
+        entry.PendingRelative = entry.StoredRelative.Replace(".url", "-pending.url");
+        Directory.CreateDirectory(Path.GetDirectoryName(storage.Resolve(entry.PendingRelative))!);
+        File.WriteAllText(storage.Resolve(entry.PendingRelative), collision); store.Save();
+        Check(!store.IsMissing(entry) && store.RestoreAll(allowMissing: true).Count == 1,
+            "a pending file copy prevents missing-only exit bypass");
+        File.Delete(storage.Resolve(entry.PendingRelative)); entry.PendingRelative = null; store.Save();
+        var offlineDesktop = store.DesktopPath + "-offline";
+        Directory.Move(store.DesktopPath, offlineDesktop);
+        var refusedOffline = false;
+        try { store.DismissMissing(entry.Id); } catch (IOException) { refusedOffline = true; }
+        Check(refusedOffline && store.RestoreAll(allowMissing: true).Count == 1 && store.Profile.Entries.Count == 1,
+            "unavailable desktop is not treated as intentional deletion or eligible for dismissal");
+        Directory.Move(offlineDesktop, store.DesktopPath);
+        var history = storage.Resolve(entry.StoredRelative.Replace(".url", "-history.url"));
+        File.WriteAllText(history, collision); entry.Versions.Add(Path.GetRelativePath(storage.Root, history)); store.Save();
+        store.DismissMissing(entry.Id);
+        var dismissed = store.Detached();
+        Check(dismissed.Profile.Entries.Count == 0 && dismissed.Profile.Ungrouped.Any(e => e.Id == entry.Id)
+            && File.ReadAllText(history) == collision && dismissed.StartSession().Count == 0,
+            "dismissed membership stays removed after restart while historical metadata and files survive");
 
         var recorder = new PerformanceRecorder(); recorder.MarkReady();
         for (var i = 0; i < 245; i++) recorder.Sample(i, false, false);

@@ -545,7 +545,7 @@ internal sealed partial class StorageWindow : Window
         foreach (var r in runtimes.Values.ToArray())
         {
             r.Paused = true;
-            if (!await RunStoreAsync(r, "退出归还", store => store.RestoreAll(), duringExit: true)) issues.Add(r.Definition.Name + "：" + r.Issue);
+            if (!await RunStoreAsync(r, "退出归还", store => store.RestoreAll(allowMissing: true), duringExit: true)) issues.Add(r.Definition.Name + "：" + r.Issue);
         }
         restoringExit = false;
         if (issues.Count > 0)
@@ -563,7 +563,7 @@ internal sealed partial class StorageWindow : Window
         var issues = new List<string>();
         foreach (var r in runtimes.Values)
         {
-            try { issues.AddRange(fileWorker.Run(() => r.Row.Store.Detached().RestoreAll()).GetAwaiter().GetResult()); }
+            try { issues.AddRange(fileWorker.Run(() => r.Row.Store.Detached().RestoreAll(allowMissing: true)).GetAwaiter().GetResult()); }
             catch (Exception error) { issues.Add(error.Message); }
         }
         storage.WriteJson("logs/session-ending.json", new { At = DateTimeOffset.Now, Restored = issues.Count == 0, Issues = issues });

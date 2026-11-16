@@ -424,6 +424,23 @@ internal static class ManagerChecks
                 Check(File.Exists(item.OriginalPath) && !File.Exists(item.Path) && batchStore.Profile.Entries.Count == 23,
                     "recovery center retry restores the file and removes only its pending ungroup membership");
                 Check(!window.RecoveryProblems.Any(p => p.EntryId == item.Id), "resolved conflict disappears from the recovery center");
+                var missingEntry = batchStore.Active.First();
+                var missingPath = batchStore.StoredPath(missingEntry);
+                File.Delete(missingPath);
+                await window.ScanRecoveryAsync();
+                var missingProblem = window.RecoveryProblems.Single(p => p.EntryId == missingEntry.Id);
+                Check(missingProblem.CanDismiss && !File.Exists(missingEntry.OriginalPath), "externally deleted shortcut exposes a missing-only recovery action");
+                window.ShowSettings(SettingsSection.Recovery); await window.WaitForIdleAsync(); window.UpdateLayout();
+                var missingButton = Descendants((DependencyObject)window.FindName("RecoveryList")).OfType<Button>()
+                    .Single(b => Equals(b.Content, "移除失效记录") && b.DataContext is RecoveryProblem p && p.EntryId == missingEntry.Id);
+                Check(missingButton.IsVisible, "missing recovery record renders its removal action in the manager");
+                SaveManagerPreview(window, storage.Resolve("manager-missing-record.png"));
+                Check(await window.DismissMissingProblemAsync(missingProblem)
+                    && !batchStore.Detached().Profile.Entries.Any(e => e.Id == missingEntry.Id)
+                    && batchStore.Detached().Profile.Ungrouped.Any(e => e.Id == missingEntry.Id)
+                    && !window.RecoveryProblems.Any(p => p.EntryId == missingEntry.Id),
+                    "manager removes missing membership, retains history and clears its recovery warning");
+                ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 window.SetManagerMode(false);
                 Check(await window.RemoveDrawerAsync(added.Id) && window.Panels.Count == 2, "manager removes a drawer after background restoration");
                 await window.WaitForIdleAsync();
@@ -506,6 +523,11 @@ internal static class ManagerChecks
                     && File.Exists(closingStore.StoredPath(closingEntry)),
                     "exit with a return conflict cancels closing, preserves both files, and keeps the manager accessible");
                 File.Delete(closingEntry.OriginalPath);
+                var removedEntries = closingStore.Profile.Entries.Where(e => e.Id != closingEntry.Id).Take(2).ToArray();
+                foreach (var removed in removedEntries) { File.Delete(removed.OriginalPath); File.Delete(closingStore.StoredPath(removed)); }
+                await window.ScanRecoveryAsync();
+                Check(removedEntries.Length == 2 && removedEntries.All(e => window.RecoveryProblems.Any(p => p.EntryId == e.Id && p.CanDismiss)),
+                    "two externally uninstalled shortcuts reproduce the reported missing-content state");
                 var stores = window.Catalog.Stores.Values.ToArray();
                 var pendingPath = Path.Combine(closingStore.DesktopPath, "退出等待.url");
                 File.WriteAllText(pendingPath, "[InternetShortcut]\r\nURL=https://example.com/exit-wait\r\n");
@@ -513,8 +535,10 @@ internal static class ManagerChecks
                 window.RequestExit();
                 await window.WaitForIdleAsync();
                 Check(!window.IsVisible && File.Exists(pendingPath) && stores.All(s => s.Profile.Entries.All(e =>
-                    File.Exists(e.OriginalPath) && !File.Exists(s.StoredPath(e)))),
-                    "closing the demo restores every drawer's sample files before disposal: " + ((System.Windows.Controls.TextBlock)window.FindName("StatusLabel")).Text);
+                    removedEntries.Any(m => m.Id == e.Id) || File.Exists(e.OriginalPath) && !File.Exists(s.StoredPath(e)))),
+                    "exit returns available files and closes despite two externally removed shortcuts: " + ((System.Windows.Controls.TextBlock)window.FindName("StatusLabel")).Text);
+                Check(removedEntries.All(e => closingStore.Detached().Profile.Entries.Any(m => m.Id == e.Id)),
+                    "exit preserves missing-entry recovery metadata rather than silently discarding it");
                 window = null;
                 storage.WriteJson("manager-results.json", new { Passed = results.Count, Results = results, Preview = output, RealDesktopFilesMoved = false });
                 Console.WriteLine(string.Join(Environment.NewLine, results));

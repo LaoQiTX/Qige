@@ -875,6 +875,16 @@
                                 <Button Content="查看收纳位置" Tag="stored" Click="OpenRecoveryLocation" Margin="0,0,6,4" Padding="8,5" FontSize="11" />
                                 <Button Content="检查并重试" Click="RetryProblemClick" Margin="0,0,6,4" Padding="8,5" FontSize="11" />
                                 <Button Content="另存收纳副本" Click="ExportProblemClick" Margin="0,0,6,4" Padding="8,5" FontSize="11" />
+                                <Button Content="移除失效记录" Click="DismissMissingProblemClick" Margin="0,0,6,4" Padding="8,5" FontSize="11">
+                                  <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                      <Setter Property="Visibility" Value="Collapsed" />
+                                      <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CanDismiss}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger>
+                                      </Style.Triggers>
+                                    </Style>
+                                  </Button.Style>
+                                </Button>
                               </WrapPanel>
                             </StackPanel>
                           </Border>
