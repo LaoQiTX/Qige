@@ -21,14 +21,23 @@ internal sealed partial class StorageWindow
         }, ready && ClipboardDesktopPaths(runtime).Length > 0);
         paste.ToolTip = "将剪贴板中的个人桌面 .lnk / .url 收纳到此抽屉"; menu.Items.Add(paste);
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
-        menu.Items.Add(DrawerAction(menu, runtime, "directory", "打开桌面文件夹", "Location", () =>
-            Process.Start(new ProcessStartInfo(runtime.Row.Store.DesktopPath) { UseShellExecute = true })));
-        menu.Items.Add(DrawerAction(menu, runtime, "terminal", "在桌面打开终端", "Terminal", () =>
-            Process.Start(new ProcessStartInfo("cmd.exe") { WorkingDirectory = runtime.Row.Store.DesktopPath, UseShellExecute = true })));
+        var directory = DrawerAction(menu, runtime, "directory", "打开抽屉文件夹", "Location", () =>
+            Process.Start(DrawerLocationStartInfo(runtime.Definition.Id, terminal: false)));
+        directory.ToolTip = runtime.Row.Store.DirectoryPath; menu.Items.Add(directory);
+        var terminal = DrawerAction(menu, runtime, "terminal", "在抽屉目录打开终端", "Terminal", () =>
+            Process.Start(DrawerLocationStartInfo(runtime.Definition.Id, terminal: true)));
+        terminal.ToolTip = runtime.Row.Store.DirectoryPath; menu.Items.Add(terminal);
         menu.Items.Add(DrawerAction(menu, runtime, "refresh", "刷新内容", "Refresh", () => _ = RefreshDrawerContentsAsync(runtime), ready));
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
         menu.Items.Add(DrawerAction(menu, runtime, "manage", "管理此抽屉内容", "Manage", () => OpenDrawerContents(runtime)));
         ShowDrawerActionMenu(menu, runtime);
+    }
+    internal ProcessStartInfo DrawerLocationStartInfo(string drawerId, bool terminal)
+    {
+        var directory = runtimes[drawerId].Row.Store.DirectoryPath;
+        Directory.CreateDirectory(directory);
+        return new ProcessStartInfo(terminal ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe") : directory)
+            { WorkingDirectory = directory, UseShellExecute = true };
     }
     private string[] ClipboardDesktopPaths(DrawerRuntime runtime)
     {

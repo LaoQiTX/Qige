@@ -63,8 +63,8 @@ Qige.slnx                      解决方案
 ## 发布与素材
 
 ```powershell
-.\publish.ps1 -Version 0.1.0-beta.13
-.\publish.ps1 -Version 0.1.0-beta.13 -Installer
+.\publish.ps1 -Version 0.1.0-beta.14
+.\publish.ps1 -Version 0.1.0-beta.14 -Installer
 pwsh -STA -File scripts/build-brand.ps1
 ```
 
@@ -76,7 +76,7 @@ pwsh -STA -File scripts/build-brand.ps1
 
 2026-11-10 用户明确要求，后续持续按以下约定执行：
 
-- 继续使用 beta，不切回 alpha。小步修复和增量功能递增 beta 编号；较大功能阶段可按范围调整次版本号，例如 `0.2.0-beta.1`。当前版本为 `0.1.0-beta.13`，不为单纯记录计划发布空版本。
+- 继续使用 beta，不切回 alpha。小步修复和增量功能递增 beta 编号；较大功能阶段可按范围调整次版本号，例如 `0.2.0-beta.1`。当前版本为 `0.1.0-beta.14`，不为单纯记录计划发布空版本。
 - 每完成一个可发布的新版本，默认提交并推送 GitHub 代码、版本与文档，同时创建对应 GitHub Release，附安装包、便携 ZIP 和各自 SHA256。已有用户授权，无需每个版本重新询问是否推送或发布。
 - 发布前完成适用检查；版本、源码提交、标签与打包内容保持一致，确认 GitHub CI 和远端附件校验。beta Release 继续标记为预发布，不覆盖既有发行附件。
 - 日常未完成修改不视为新版本。用户另有版本、发布范围或暂停指示时，以当次指示为准。

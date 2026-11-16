@@ -119,6 +119,17 @@ internal static class ManagerChecks
                     "native blank right-click opens content actions instead of title appearance settings");
                 SaveMenuPreview(contentMenu, storage.Resolve("drawer-content-menu.png"));
                 contentMenu.IsOpen = false;
+                var drawerDirectory = window.Catalog.Stores["default"].DirectoryPath;
+                var folderStart = window.DrawerLocationStartInfo("default", terminal: false);
+                var terminalStart = window.DrawerLocationStartInfo("default", terminal: true);
+                Check(folderStart.FileName == drawerDirectory && folderStart.WorkingDirectory == drawerDirectory && folderStart.UseShellExecute,
+                    "open drawer folder targets its own storage directory instead of the desktop");
+                Check(Path.GetFileName(terminalStart.FileName) == "cmd.exe" && terminalStart.WorkingDirectory == drawerDirectory && terminalStart.UseShellExecute,
+                    "drawer terminal starts in that drawer directory without shell-interpolated path arguments");
+                var otherDrawer = window.Catalog.Stores.First(pair => pair.Key != "default");
+                Check(window.DrawerLocationStartInfo(otherDrawer.Key, terminal: true).WorkingDirectory == otherDrawer.Value.DirectoryPath
+                    && otherDrawer.Value.DirectoryPath != drawerDirectory && Directory.Exists(otherDrawer.Value.DirectoryPath),
+                    "directory actions stay scoped to the pointed drawer and ensure its directory exists");
                 var oldClipboard = Clipboard.GetDataObject();
                 try
                 {

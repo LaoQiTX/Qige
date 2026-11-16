@@ -45,6 +45,7 @@ internal sealed class ShortcutStore
     public ShortcutProfile Profile { get; private set; }
     public IReadOnlyList<StoredShortcut> Active => Profile.Entries.Where(entry => (entry.Phase is "Stored" or "Updating") && File.Exists(StoredPath(entry))).ToArray();
     public string DesktopPath => desktop;
+    public string DirectoryPath => storage.Resolve(storeRelative);
     public event Action? Changed;
 
     public ShortcutStore(AppStorage storage, string? desktop = null, string profileRelative = "config/groups/default.json", string storeRelative = "storage/default")
