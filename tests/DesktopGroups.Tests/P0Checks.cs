@@ -166,6 +166,23 @@ internal static class P0Checks
             && File.ReadAllText(history) == collision && dismissed.StartSession().Count == 0,
             "dismissed membership stays removed after restart while historical metadata and files survive");
 
+        store.CreateWebsite("网址安全样例", "https://example.com/new-url");
+        var website = store.Profile.Entries.Single(); var websiteBytes = File.ReadAllText(store.StoredPath(website));
+        Check(websiteBytes.Contains("URL=https://example.com/new-url") && !File.Exists(website.OriginalPath), "new website uses verified shortcut collection and a serialized URL format");
+        var rejectedWebsite = false;
+        try { store.CreateWebsite("网址安全样例", "https://example.com/replaced"); } catch (IOException) { rejectedWebsite = true; }
+        Check(rejectedWebsite && File.ReadAllText(store.StoredPath(website)) == websiteBytes, "new website never overwrites an existing grouped entry");
+        var rejectedScheme = false;
+        try { store.CreateWebsite("invalid-scheme", "file:///C:/Windows"); } catch (IOException) { rejectedScheme = true; }
+        var rejectedName = false;
+        try { store.CreateWebsite("../escape", "https://example.com/"); } catch (IOException) { rejectedName = true; }
+        Check(rejectedScheme && rejectedName && store.Profile.Entries.Count == 1, "new website rejects unsupported schemes and path escape names without creating membership");
+        store.ReturnAndUngroup(store.StoredPath(website));
+        File.WriteAllText(website.OriginalPath, collision);
+        rejectedWebsite = false;
+        try { store.CreateWebsite("网址安全样例", "https://example.com/replaced"); } catch (IOException) { rejectedWebsite = true; }
+        Check(rejectedWebsite && File.ReadAllText(website.OriginalPath) == collision, "new website preserves an existing ungrouped desktop file on filename collision");
+
         var recorder = new PerformanceRecorder(); recorder.MarkReady();
         for (var i = 0; i < 245; i++) recorder.Sample(i, false, false);
         Check(recorder.SampleCount == 240 && recorder.Latest is { WorkingSetMB: > 0, PrivateMB: > 0, ProcessCpuPercent: >= 0 and <= 100 },

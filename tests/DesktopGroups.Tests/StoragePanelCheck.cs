@@ -211,6 +211,25 @@ internal static class StoragePanelCheck
         panel.EnsureAttached(true);
         if (!panel.IsExpanded || !panel.ManualExpansion) throw new InvalidOperationException("手动展开状态未恢复。");
         panel.SetFolded(true); panel.ApplyScreenLayout((int)prior.X, (int)prior.Y, 420, 352); await FinishAnimation(panel);
+        panel.PointerMove((int)(70 * scale), (int)(23 * scale)); await FinishAnimation(panel);
+        SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - (int)(24 * scale), (int)(23 * scale)));
+        await FinishAnimation(panel);
+        panel.PointerMove((int)(72 * scale), (int)(23 * scale));
+        if (panel.IsExpanded || panel.ManualExpansion) throw new InvalidOperationException("悬停模式点击折叠后立即重开或被改为手动模式。");
+        panel.PointerLeave(); panel.PointerMove((int)(70 * scale), (int)(23 * scale)); await FinishAnimation(panel);
+        if (!panel.IsExpanded || panel.ManualExpansion) throw new InvalidOperationException("手动折叠后再次悬停失效。");
+        SendMessage(panel.Handle, 0x203, 0, MousePoint((int)(70 * scale), (int)(23 * scale)));
+        await FinishAnimation(panel);
+        if (panel.IsExpanded || panel.ManualExpansion) throw new InvalidOperationException("悬停模式双击不能临时折叠。");
+        panel.PointerLeave();
+        SendMessage(panel.Handle, 0x201, 1, MousePoint(panel.Width - (int)(24 * scale), (int)(23 * scale)));
+        await FinishAnimation(panel);
+        if (!panel.IsExpanded || panel.ManualExpansion) throw new InvalidOperationException("悬停模式按钮不能临时展开。");
+        panel.PointerLeave(); await FinishAnimation(panel);
+        panel.PointerMove((int)(70 * scale), (int)(23 * scale)); await FinishAnimation(panel);
+        if (!panel.IsExpanded || panel.ManualExpansion) throw new InvalidOperationException("临时展开后悬停没有继续工作。");
+        panel.PointerLeave(); await FinishAnimation(panel);
+        Console.WriteLine("PASS hover mode survives title button and double-click toggles, holds temporary collapse until leave and reopens on reentry");
         Console.WriteLine("PASS manual button and title double-click, hover-independent state, bottom-anchored upward animation and icon hit testing; compact/standard/spacious columns 6/5/4");
     }
 

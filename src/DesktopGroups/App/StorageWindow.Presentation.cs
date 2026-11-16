@@ -8,7 +8,7 @@ using System.Windows.Media.Imaging;
 
 namespace DesktopGroups;
 
-internal sealed record ManagerContent(string Id, string Name, string OriginalPath, string Path, string State, string Detail, BitmapSource? Icon, bool CanReturn);
+internal sealed record ManagerContent(string Id, string Name, string OriginalPath, string Path, string State, string Detail, BitmapSource? Icon, bool CanReturn, bool CanOpen = true, bool CanDismiss = false);
 internal sealed record ManagerMonitor(string? Device, string Label);
 
 internal sealed partial class StorageWindow
@@ -98,6 +98,14 @@ internal sealed partial class StorageWindow
             SelectDrawer(row.Id);
         }
     }
+    private void CanvasDrawerDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || sender is not ListBoxItem { DataContext: DrawerRow row }
+            || closing || maintenanceBusy) return;
+        // Use the clicked container, including its child previews; never the previous selection.
+        SearchBox.Clear(); SelectDrawer(row.Id); SetManagerMode(true);
+        StudioContentsList.BringIntoView(); e.Handled = true;
+    }
     private void CanvasMonitorChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!initializing && !refreshingViews) RefreshManagerViews();
@@ -131,15 +139,18 @@ internal sealed partial class StorageWindow
             var path = collected ? store.StoredPath(e) : e.OriginalPath;
             var key = e.Id + ":" + e.Hash + ":" + path;
             iconCache.TryGet(key, out var icon);
-            var state = collected ? "已收纳" : "在桌面／待检查";
+            var missing = recoveryProblems.Any(p => p.CanDismiss && p.EntryId == e.Id && p.OriginalPath == e.OriginalPath);
+            var state = missing ? "文件已不存在 · 可移除记录" : collected ? "已收纳" : "在桌面／待检查";
             var coordinates = e.OriginalX.HasValue && e.OriginalY.HasValue ? $"原坐标 ({e.OriginalX}, {e.OriginalY})" : "未记录原坐标";
             return new ManagerContent(e.Id, Path.GetFileNameWithoutExtension(e.OriginalPath), e.OriginalPath, path,
-                state, $"{state} · {coordinates}", icon, collected);
+                state, $"{state} · {coordinates}", missing ? null : icon, collected && !missing, !missing, missing);
         }).ToArray();
     }
     private void RefreshRowPresentation(DrawerRuntime runtime)
     {
-        runtime.Row.Preview = BuildContents(runtime.Row.Store).Take(4).ToArray();
+        var contents = BuildContents(runtime.Row.Store);
+        runtime.Row.MissingCount = contents.Count(e => e.CanDismiss);
+        runtime.Row.Preview = contents.Where(e => !e.CanDismiss).Take(4).ToArray();
         runtime.Row.Placement = PlacementFor(runtime.Row);
     }
     private void FillStudioContents()
@@ -147,6 +158,7 @@ internal sealed partial class StorageWindow
         var query = SearchBox.Text.Trim();
         var contents = currentContents.Where(e => query.Length == 0 || (Selected?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
             || e.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        ContentActions.IsEnabled = SelectedRuntime is { Busy: false } && !closing && !maintenanceBusy && !exitAfterOperations;
         StudioContentsList.ItemsSource = contents;
         StudioEmptyLabel.Visibility = contents.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         StudioTitle.Text = Selected?.Name ?? "选择一个抽屉";
@@ -168,17 +180,24 @@ internal sealed partial class StorageWindow
         if (!item.CanReturn) { Status("此入口已在桌面，无需再次归还。"); return; }
         _ = RunStoreAsync(runtime, "归还并解除分组", store => { store.ReturnAndUngroup(item.Path); return []; });
     });
+    private async void DismissMissingContentClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: ManagerContent item } || SelectedRuntime is not { } runtime) return;
+        var problem = recoveryProblems.FirstOrDefault(p => p.DrawerId == runtime.Definition.Id && p.EntryId == item.Id && p.CanDismiss);
+        if (problem != null) await ConfirmDismissMissingAsync(problem);
+        else { Status("文件状态已变化，请重新检查。"); await ScanRecoveryAsync(); }
+    }
     private void ShowModal(Border box)
     {
         if (ModalLayer.Visibility != Visibility.Visible) modalReturnFocus = Keyboard.FocusedElement;
-        CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = Visibility.Collapsed;
+        CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = NewWebsiteBox.Visibility = Visibility.Collapsed;
         ModalLayer.Visibility = box.Visibility = Visibility.Visible;
         KeyboardNavigation.SetTabNavigation(box, KeyboardNavigationMode.Cycle);
         box.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
     }
     private void DismissModal()
     {
-        ModalLayer.Visibility = CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = Visibility.Collapsed;
+        ModalLayer.Visibility = CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = NewWebsiteBox.Visibility = Visibility.Collapsed;
         if (modalReturnFocus != null) Keyboard.Focus(modalReturnFocus);
     }
     private void DismissModalClick(object sender, RoutedEventArgs e) => DismissModal();

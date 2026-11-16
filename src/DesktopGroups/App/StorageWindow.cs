@@ -175,6 +175,7 @@ internal sealed partial class StorageWindow : Window
         };
         panel.PreferencesChanged += () => SavePanelPreferences(runtime);
         panel.DrawerMenuRequested += () => OpenDrawerSettingsMenu(runtime);
+        panel.BlankMenuRequested += () => OpenDrawerContentMenu(runtime);
         panel.TransformLayout = (rect, edges) => Transform(runtime, rect, edges);
         panel.InteractionEnded += () => { runtime.Snap = new(); guides.Hide(); };
         panel.LayoutCommitted += () => { SaveLayout(runtime); UpdateDetail(); };
@@ -221,7 +222,8 @@ internal sealed partial class StorageWindow : Window
     private void RefreshItems(DrawerRuntime runtime)
     {
         var active = runtime.Row.Store.Active;
-        var signature = string.Join("|", runtime.Row.Store.Profile.Entries.Select(e => e.Id + ":" + e.Phase + ":" + e.StoredRelative + ":" + e.Hash));
+        var activeIds = active.Select(e => e.Id).ToHashSet();
+        var signature = string.Join("|", runtime.Row.Store.Profile.Entries.Select(e => e.Id + ":" + e.Phase + ":" + e.StoredRelative + ":" + e.Hash + ":" + activeIds.Contains(e.Id)));
         if (runtime.ItemsSignature != signature)
         {
             runtime.ItemsSignature = signature;

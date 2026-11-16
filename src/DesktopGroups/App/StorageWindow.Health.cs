@@ -173,6 +173,7 @@ internal sealed partial class StorageWindow
             (sample == null ? "等待首个资源采样（每 15 秒一次）" : $"进程 CPU：{sample.ProcessCpuPercent:F2}% · 工作集：{sample.WorkingSetMB:F1} MB · 私有内存：{sample.PrivateMB:F1} MB\nUI 调度最大延迟：{sample.UiDelayMs:F0} ms · 已采样 {performance.SampleCount} 次（最多保留 240 次）") +
             $"\n图标缓存：{iconCache.Count}/256 · 已加载：{iconCache.Loads} · 缓存命中：{iconCache.Hits}";
         RecoveryCountLabel.Text = recoveryProblems.Count == 0 ? "没有检查到待处理文件。" : $"{recoveryProblems.Count} 个待处理文件 · 先检查两处内容，操作不会覆盖同名文件";
+        ContentActions.IsEnabled = SelectedRuntime is { Busy: false } && !closing && !maintenanceBusy && !exitAfterOperations;
         RestoreAllButton.IsEnabled = RecollectAllButton.IsEnabled = !closing && !exitAfterOperations && BusyOperations == 0;
     }
     private async void RefreshRecoveryClick(object sender, RoutedEventArgs e) => await ScanRecoveryAsync();
@@ -199,6 +200,7 @@ internal sealed partial class StorageWindow
             recoveryProblems.Clear(); foreach (var item in collected) recoveryProblems.Add(item);
             SettingsButtonLabel.Text = collected.Count == 0 ? "设置" : $"设置 · {collected.Count} 项待处理";
             RecoverySettingsTab.Content = collected.Count == 0 ? "运行与恢复" : $"运行与恢复 · {collected.Count}";
+            foreach (var runtime in runtimes.Values) RefreshItems(runtime);
             RefreshHealthText();
         }
         catch (Exception e) { if (!disposed) { HealthEnvironment.Text = "检查未完成：" + e.Message; Status(HealthEnvironment.Text); } }
@@ -248,6 +250,10 @@ internal sealed partial class StorageWindow
     private async void DismissMissingProblemClick(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: RecoveryProblem problem } || !problem.CanDismiss) return;
+        await ConfirmDismissMissingAsync(problem);
+    }
+    private async Task ConfirmDismissMissingAsync(RecoveryProblem problem)
+    {
         if (closing || maintenanceBusy || exitAfterOperations || BusyOperations > 0) return;
         var answer = MessageBox.Show(this, $"将「{problem.Name}」从抽屉中移除？\n\n仅适用于已卸载或删除的入口。操作会再次检查文件是否缺失，保留历史记录及已有副本，不删除文件。", "移除失效记录", MessageBoxButton.OKCancel, MessageBoxImage.Question);
         if (answer == MessageBoxResult.OK) await DismissMissingProblemAsync(problem);

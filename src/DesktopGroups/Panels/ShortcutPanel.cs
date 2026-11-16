@@ -46,7 +46,7 @@ internal sealed class ShortcutPanel : IDisposable
     private string title = "常用";
     private double logicalWidth = 420, logicalHeight = 352, scrollOffset;
     private bool layoutLocked, scrolling, highlighted;
-    private bool itemMenuOpen, manualExpansion, expandsUpward;
+    private bool itemMenuOpen, manualExpansion, expandsUpward, suppressHoverUntilLeave;
     private IconDensity density = IconDensity.Standard;
     internal bool ManualExpansion => manualExpansion;
     internal bool ManualCollapsed => !hoveringOpen;
@@ -59,6 +59,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal LayoutRect AnchorBounds => ScreenBounds with { Y = ScreenBounds.Y + (expandsUpward ? Height - Math.Round(46 * scale) : 0) };
     public event Action? PreferencesChanged;
     public event Action? DrawerMenuRequested;
+    public event Action? BlankMenuRequested;
     private int resizeEdges;
     private LayoutRect gestureStart;
     private long lastResize;
@@ -185,7 +186,7 @@ internal sealed class ShortcutPanel : IDisposable
 
     internal void RestoreFolded(bool value)
     {
-        folded = value; hoveringOpen = false; manualExpansion = false;
+        folded = value; hoveringOpen = false; manualExpansion = false; suppressHoverUntilLeave = false;
         displayHeight = animationFrom = animationTo = value ? 46 : logicalHeight;
         animationTimer.Stop();
         if (IsAttached) Render();
@@ -208,12 +209,21 @@ internal sealed class ShortcutPanel : IDisposable
 
     internal void ToggleManual()
     {
-        var open = IsExpanded; manualExpansion = folded = true; hoveringOpen = !open; hovered = -1;
-        if (IsAttached) EnsureAttached(true); Render(); PreferencesChanged?.Invoke();
+        var open = IsExpanded;
+        if (folded && !manualExpansion)
+        {
+            // A title gesture changes this hover visit, not the selected expansion mode.
+            hoveringOpen = !open; suppressHoverUntilLeave = open;
+        }
+        else { manualExpansion = folded = true; hoveringOpen = !open; suppressHoverUntilLeave = false; }
+        hovered = -1;
+        if (IsAttached) EnsureAttached(true);
+        Render(); PreferencesChanged?.Invoke();
     }
 
     internal void SetManualMode()
     {
+        suppressHoverUntilLeave = false;
         if (!manualExpansion) { manualExpansion = folded = true; hoveringOpen = false; }
         if (IsAttached) EnsureAttached(true); Render(); PreferencesChanged?.Invoke();
     }
@@ -446,8 +456,8 @@ internal sealed class ShortcutPanel : IDisposable
 
     internal void SetFolded(bool value)
     {
-        if (folded == value && !hoveringOpen && !manualExpansion) return;
-        folded = value; hoveringOpen = false; manualExpansion = false; hovered = -1;
+        if (folded == value && !hoveringOpen && !manualExpansion && !suppressHoverUntilLeave) return;
+        folded = value; hoveringOpen = false; manualExpansion = false; suppressHoverUntilLeave = false; hovered = -1;
         if (IsAttached) EnsureAttached(true);
         Render();
         FoldedChanged?.Invoke(value);
@@ -456,7 +466,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal void PointerMove(int x, int y)
     {
         var needsRender = false;
-        if (folded && !manualExpansion && !hoveringOpen) { hoveringOpen = true; needsRender = true; }
+        if (folded && !manualExpansion && !suppressHoverUntilLeave && !hoveringOpen) { hoveringOpen = true; needsRender = true; }
         var next = HitItem(x, y);
         if (next != hovered) { hovered = next; needsRender = true; }
         if (needsRender) Render();
@@ -474,6 +484,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal void PointerLeave()
     {
         tracking = false;
+        if (!IsInteracting) suppressHoverUntilLeave = false;
         var needsRender = hovered != -1;
         hovered = -1;
         // Captured resize/scroll gestures can leave the visible bounds. Keep
@@ -494,7 +505,7 @@ internal sealed class ShortcutPanel : IDisposable
     private void SetFileDrag(bool active, bool keepHover)
     {
         fileDrag = active; hovered = -1;
-        if (active && folded && !manualExpansion) hoveringOpen = true;
+        if (active && folded && !manualExpansion) { suppressHoverUntilLeave = false; hoveringOpen = true; }
         if (!active)
         {
             if (!keepHover)
@@ -613,7 +624,13 @@ internal sealed class ShortcutPanel : IDisposable
                     catch { CloseItemMenu(); throw; }
                     return 0;
                 }
-                OpenDrawerMenu(); return 0;
+                if (HitTitle(y)) OpenDrawerMenu();
+                else if (!IsInteracting && BlankMenuRequested != null)
+                {
+                    itemMenuOpen = true;
+                    try { BlankMenuRequested.Invoke(); } catch { CloseItemMenu(); throw; }
+                }
+                return 0;
             case 0x215:
                 if (pressedItem >= 0) { CancelIconGesture(); UpdateHoverAfterMove(); }
                 var wasScrolling = scrolling;
@@ -760,7 +777,7 @@ internal sealed class ShortcutPanel : IDisposable
         if (dropRegistered) { RevokeDragDrop(Handle); dropRegistered = false; }
         dropTarget = null;
         if (Handle != 0) { var handle = Handle; Handle = 0; Instances.Remove(handle); if (destroy && IsWindow(handle)) DestroyWindow(handle); }
-        fileDrag = tracking = false; if (!manualExpansion) hoveringOpen = false; hovered = -1;
+        fileDrag = tracking = suppressHoverUntilLeave = false; if (!manualExpansion) hoveringOpen = false; hovered = -1;
         displayHeight = animationFrom = animationTo = IsExpanded ? logicalHeight : 46;
     }
 

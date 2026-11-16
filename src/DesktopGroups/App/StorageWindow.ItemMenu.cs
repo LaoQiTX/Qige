@@ -20,7 +20,7 @@ internal sealed partial class StorageWindow
     {
         if (itemMenu != null) itemMenu.IsOpen = false;
         var entry = runtime.Row.Store.Active.FirstOrDefault(e => string.Equals(runtime.Row.Store.StoredPath(e), path, StringComparison.OrdinalIgnoreCase));
-        if (disposed || closing || runtime.Definition.Removing || entry == null)
+        if (disposed || closing || maintenanceBusy || runtime.Definition.Removing || entry == null)
         {
             runtime.Panel.CloseItemMenu();
             return;
@@ -35,7 +35,7 @@ internal sealed partial class StorageWindow
         var name = Path.GetFileNameWithoutExtension(entry.OriginalPath);
         menu.Items.Add(new MenuItem
         {
-            Header = name, ToolTip = name, IsEnabled = false,
+            Header = name, InputGestureText = "快捷方式", ToolTip = name, IsEnabled = false,
             Style = (Style)menu.FindResource("DrawerMenuHeading")
         });
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
@@ -56,7 +56,7 @@ internal sealed partial class StorageWindow
         }
         void WithFile(Action action)
         {
-            if (disposed || closing || exitAfterOperations || runtime.Definition.Removing || runtime.Busy)
+            if (disposed || closing || maintenanceBusy || exitAfterOperations || runtime.Definition.Removing || runtime.Busy)
                 throw new InvalidOperationException("请等待文件操作结束后重试。");
             if (!runtime.Row.Store.Active.Any(e => string.Equals(runtime.Row.Store.StoredPath(e), path, StringComparison.OrdinalIgnoreCase))
                 || !File.Exists(path)) throw new IOException("入口已归还或暂不可用，请重新打开菜单。");
@@ -82,7 +82,7 @@ internal sealed partial class StorageWindow
         {
             _ = RunStoreAsync(runtime, "归还并解除分组", store => { store.ReturnAndUngroup(path); return []; });
         }), !runtime.Busy);
-        Add("manage", "管理此抽屉", () => { SelectDrawer(runtime.Definition.Id); ShowControl(); });
+        Add("manage", "管理此抽屉", () => OpenDrawerContents(runtime));
         menu.Closed += (_, _) =>
         {
             if (itemMenu == menu) itemMenu = null;

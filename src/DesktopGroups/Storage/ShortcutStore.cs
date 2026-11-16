@@ -97,6 +97,25 @@ internal sealed class ShortcutStore
         Changed?.Invoke();
     }
 
+    internal static string WebsitePath(string desktopPath, string name, string url)
+    {
+        name = name.Trim();
+        if (name.EndsWith(".url", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+        if (name.Length is < 1 or > 100 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.EndsWith('.')
+            || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            throw new IOException("请输入有效名称和 http / https 网址。");
+        return Path.Combine(desktopPath, name + ".url");
+    }
+    internal void CreateWebsite(string name, string url)
+    {
+        var path = WebsitePath(desktop, name, url); ValidateOriginal(path);
+        if (Profile.Entries.Any(e => e.OriginalPath.Equals(path, StringComparison.OrdinalIgnoreCase)))
+            throw new IOException("抽屉已有同名入口，请使用其他名称。");
+        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        using (var writer = new StreamWriter(file, new System.Text.UTF8Encoding(false)))
+            writer.Write("[InternetShortcut]\r\nURL=" + new Uri(url.Trim()).AbsoluteUri + "\r\n");
+        Add(path); // On collection failure the created original remains recoverable on the desktop.
+    }
     public void Add(string path, IconPlacement? position = null)
     {
         path = Path.GetFullPath(path);

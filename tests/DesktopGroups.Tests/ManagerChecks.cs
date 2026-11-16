@@ -37,11 +37,21 @@ internal static class ManagerChecks
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(path); encoder.Save(file);
     }
-    private static void SaveMenuPreview(ContextMenu menu, string path)
+    private static IEnumerable<MenuItem> MenuEntries(System.Collections.IEnumerable items)
+    {
+        foreach (var item in items.OfType<MenuItem>())
+        {
+            yield return item;
+            foreach (var child in MenuEntries(item.Items)) yield return child;
+        }
+    }
+    private static void SaveMenuPreview(FrameworkElement menu, string path)
     {
         menu.UpdateLayout();
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth * 2), (int)Math.Ceiling(menu.ActualHeight * 2), 192, 192, PixelFormats.Pbgra32);
-        bitmap.Render(menu);
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen()) drawing.DrawRectangle(new VisualBrush(menu), null, new Rect(0, 0, menu.ActualWidth, menu.ActualHeight));
+        bitmap.Render(visual);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(path); encoder.Save(file);
     }
@@ -78,24 +88,83 @@ internal static class ManagerChecks
                 var menuPanel = window.Panels[0];
                 menuPanel.OpenDrawerMenu(); await Task.Delay(150);
                 var settingsMenu = window.ActiveItemMenu!;
-                Check(settingsMenu.IsOpen && settingsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Tag, "density-Compact")), "drawer ellipsis opens current-drawer settings with icon spacing controls");
+                Check(settingsMenu.IsOpen && MenuEntries(settingsMenu.Items).Any(m => Equals(m.Tag, "density-Compact")), "drawer ellipsis opens current-drawer settings with icon spacing controls");
                 SaveMenuPreview(settingsMenu, storage.Resolve("drawer-settings-menu.png"));
-                settingsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "density-Compact")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-                settingsMenu.IsOpen = false; await Task.Delay(250);
+                var densityParent = settingsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "density"));
+                densityParent.IsSubmenuOpen = true; await Task.Delay(120);
+                Check(densityParent.Items.Count == 3 && densityParent.IsSubmenuOpen, "drawer settings exposes working density submenu with three choices");
+                var densityPopup = (Popup)densityParent.Template.FindName("PART_Popup", densityParent);
+                Check(densityPopup.IsOpen && densityPopup.Child is FrameworkElement { ActualWidth: > 100, ActualHeight: > 50 }, "density submenu renders visible content with the redesigned popup template");
+                SaveMenuPreview((FrameworkElement)densityPopup.Child, storage.Resolve("drawer-density-submenu.png"));
+                MenuEntries(settingsMenu.Items).Single(m => Equals(m.Tag, "density-Compact")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                densityParent.IsSubmenuOpen = false; settingsMenu.IsOpen = false; await Task.Delay(250);
+                await window.WaitForIdleAsync();
                 Check(menuPanel.Columns == 6 && window.Catalog.Stores["default"].Profile.Density == IconDensity.Compact, "density menu updates native columns and persisted profile");
                 menuPanel.SetDensity(IconDensity.Standard);
                 var menuScale = menuPanel.Width / menuPanel.LogicalWidth;
-                SendMessage(menuPanel.Handle, 0x205, 0, (nint)(((int)(20 * menuScale) << 16) | (int)(40 * menuScale)));
+                var titleMenuY = menuPanel.ExpandsUpward ? menuPanel.Height - (int)(20 * menuScale) : (int)(20 * menuScale);
+                SendMessage(menuPanel.Handle, 0x205, 0, (nint)((titleMenuY << 16) | (int)(40 * menuScale)));
                 await Task.Delay(150);
-                Check(window.ActiveItemMenu?.Items.OfType<MenuItem>().Any(m => Equals(m.Tag, "manual")) == true, "right-clicking the title opens the same drawer settings menu");
+                Check(window.ActiveItemMenu != null && MenuEntries(window.ActiveItemMenu.Items).Any(m => Equals(m.Tag, "manual")), $"right-clicking the title opens the same drawer settings menu (upward={menuPanel.ExpandsUpward}, interacting={menuPanel.IsInteracting}, menu={window.ActiveItemMenu?.IsOpen})");
                 window.ActiveItemMenu!.IsOpen = false; await Task.Delay(250);
                 await window.WaitForIdleAsync();
                 Check(await window.BackupNowAsync(), "manager creates a complete manual backup through its serialized file worker");
+                menuPanel.SetFolded(false); await Task.Delay(200);
+                var bodyPoint = (nint)(((menuPanel.Height - 2) << 16) | menuPanel.Width / 2);
+                SendMessage(menuPanel.Handle, 0x205, 0, bodyPoint); await Task.Delay(100);
+                var contentMenu = window.ActiveItemMenu!;
+                var bodyActions = MenuEntries(contentMenu.Items).Select(m => m.Tag as string).ToArray();
+                Check(contentMenu.IsOpen && bodyActions.Contains("new") && bodyActions.Contains("paste") && bodyActions.Contains("directory")
+                    && bodyActions.Contains("terminal") && bodyActions.Contains("refresh") && !bodyActions.Contains("density") && !bodyActions.Contains("lock"),
+                    "native blank right-click opens content actions instead of title appearance settings");
+                SaveMenuPreview(contentMenu, storage.Resolve("drawer-content-menu.png"));
+                contentMenu.IsOpen = false;
+                var oldClipboard = Clipboard.GetDataObject();
+                try
+                {
+                    var copyPaths = new System.Collections.Specialized.StringCollection();
+                    var pastePath = Path.Combine(window.Catalog.Stores["default"].DesktopPath, "菜单粘贴.url");
+                    File.WriteAllText(pastePath, "[InternetShortcut]\r\nURL=https://example.com/menu-paste\r\n"); copyPaths.Add(pastePath);
+                    Clipboard.SetFileDropList(copyPaths);
+                    await window.WaitForIdleAsync();
+                    SendMessage(menuPanel.Handle, 0x205, 0, bodyPoint); await Task.Delay(100);
+                    var pasteAction = MenuEntries(window.ActiveItemMenu!.Items).Single(m => Equals(m.Tag, "paste"));
+                    Check(pasteAction.IsEnabled, $"blank menu enables paste for supported desktop shortcuts (busy={window.BusyOperations}, clipboard={Clipboard.ContainsFileDropList()}, acceptable={window.Catalog.Stores["default"].CanAccept(Clipboard.GetFileDropList().Cast<string>().ToArray())})");
+                    window.ActiveItemMenu!.IsOpen = false;
+                    pasteAction.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await window.WaitForIdleAsync();
+                    var pasteStore = window.Catalog.Stores["default"];
+                    var pasted = pasteStore.Profile.Entries.Single(e => e.OriginalPath == pastePath);
+                    Check(!File.Exists(pastePath) && File.Exists(pasteStore.StoredPath(pasted)), "paste routes through verified collection into the pointed drawer");
+                    pasteStore.ReturnAndUngroup(pasteStore.StoredPath(pasted));
+                    Clipboard.SetText("unsupported clipboard text");
+                    SendMessage(menuPanel.Handle, 0x205, 0, bodyPoint); await Task.Delay(100);
+                    Check(!MenuEntries(window.ActiveItemMenu!.Items).Single(m => Equals(m.Tag, "paste")).IsEnabled,
+                        "blank menu clearly disables paste for unsupported clipboard content");
+                    window.ActiveItemMenu!.IsOpen = false;
+                }
+                finally { if (oldClipboard != null) Clipboard.SetDataObject(oldClipboard, true); else Clipboard.Clear(); }
+                Check(await window.CreateWebsiteAsync("default", "菜单网址样例", "https://example.com/website"), "new website action creates and collects a URL in the chosen drawer");
+                var websiteStore = window.Catalog.Stores["default"];
+                var website = websiteStore.Profile.Entries.Single(e => Path.GetFileName(e.OriginalPath) == "菜单网址样例.url");
+                Check(!await window.CreateWebsiteAsync("default", "菜单网址样例", "https://example.com/replacement")
+                    && File.ReadAllText(websiteStore.StoredPath(website)).Contains("https://example.com/website")
+                    && ((ListBox)window.FindName("DrawerList")).Items.Cast<DrawerRow>().Single(r => r.Id == "default").Issue == null,
+                    "new website refuses duplicate names without replacing content or marking a healthy drawer as broken");
+                websiteStore.ReturnAndUngroup(websiteStore.StoredPath(website));
+                window.SelectDrawer("default"); window.SetManagerMode(true);
+                var websiteButton = Descendants((DependencyObject)window.Content).OfType<Button>().Single(b => Equals(b.Content, "新建网址…"));
+                websiteButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.UpdateLayout();
+                Check(((FrameworkElement)window.FindName("NewWebsiteBox")).IsVisible
+                    && ((TextBlock)window.FindName("WebsiteDrawerLabel")).Text.Contains("常用"), "manager content toolbar creates URLs in an explicitly named drawer");
+                SaveManagerPreview(window, storage.Resolve("manager-new-website.png"));
+                var cancelWebsite = Descendants((DependencyObject)window.FindName("NewWebsiteBox")).OfType<Button>().Single(b => Equals(b.Content, "取消"));
+                cancelWebsite.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.SetManagerMode(false);
+                await window.WaitForIdleAsync();
                 var backupService = new BackupService(new AppStorage(Directory.GetParent(window.Catalog.Stores["default"].DesktopPath)!.FullName), window.Catalog.Stores["default"].DesktopPath);
                 var uiBackup = backupService.List(backupService.Options()).First();
                 window.Catalog.Stores["default"].Profile.Density = IconDensity.Spacious;
                 window.Catalog.Stores["default"].Save();
-                Check(await window.RestoreBackupAsync(uiBackup.Directory), "manager restoration backs up current state, returns contents and reloads drawers");
+                Check(await window.RestoreBackupAsync(uiBackup.Directory), "manager restoration backs up current state, returns contents and reloads drawers: " + ((TextBlock)window.FindName("StatusLabel")).Text);
                 await window.WaitForIdleAsync();
                 Check(window.Panels.Count == 2 && window.Catalog.Stores["default"].Profile.Density == IconDensity.Standard
                     && window.Catalog.Stores["default"].Active.Count == 18 && !window.MaintenanceBusy, "restored manager resumes collection with complete membership and releases the operation fence");
@@ -139,6 +208,21 @@ internal static class ManagerChecks
                 canvasList.SelectedItem = workRow;
                 Check(drawerList.SelectedItem == workRow && ((TextBlock)window.FindName("SelectedTitle")).Text == "工作",
                     "selecting a canvas card synchronizes the Studio list and inspector");
+                ((TextBox)window.FindName("SearchBox")).Text = "常用";
+                window.UpdateLayout();
+                var workCard = (ListBoxItem)canvasList.ItemContainerGenerator.ContainerFromItem(workRow);
+                var cardDoubleClick = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = Control.MouseDoubleClickEvent };
+                workCard.RaiseEvent(cardDoubleClick);
+                Check(cardDoubleClick.Handled && ((FrameworkElement)window.FindName("StudioView")).Visibility == Visibility.Visible
+                    && drawerList.SelectedItem == workRow && ((TextBlock)window.FindName("StudioTitle")).Text == workRow.Name
+                    && ((TextBox)window.FindName("SearchBox")).Text.Length == 0,
+                    "double-clicking a different canvas drawer clears old search and opens that drawer's contents");
+                window.SetManagerMode(false);
+                canvasList.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = Control.MouseDoubleClickEvent });
+                Check(((FrameworkElement)window.FindName("CanvasView")).Visibility == Visibility.Visible,
+                    "double-clicking canvas whitespace does not open the previously selected drawer");
                 window.SetManagerMode(true);
                 Check(((FrameworkElement)window.FindName("StudioView")).Visibility == Visibility.Visible && drawerList.SelectedItem == workRow,
                     "mode switching preserves the selected drawer");
@@ -426,10 +510,22 @@ internal static class ManagerChecks
                 Check(!window.RecoveryProblems.Any(p => p.EntryId == item.Id), "resolved conflict disappears from the recovery center");
                 var missingEntry = batchStore.Active.First();
                 var missingPath = batchStore.StoredPath(missingEntry);
+                var beforeMissingSurface = batchPanel.SurfaceBuilds;
                 File.Delete(missingPath);
-                await window.ScanRecoveryAsync();
+                await window.ScanRecoveryAsync(); await window.WaitForIdleAsync();
+                Check(batchPanel.SurfaceBuilds > beforeMissingSurface, "a disappeared stored file also refreshes the native drawer surface without profile changes");
                 var missingProblem = window.RecoveryProblems.Single(p => p.EntryId == missingEntry.Id);
                 Check(missingProblem.CanDismiss && !File.Exists(missingEntry.OriginalPath), "externally deleted shortcut exposes a missing-only recovery action");
+                window.SelectDrawer(added.Id); window.SetManagerMode(true); window.UpdateLayout();
+                var missingContentButton = Descendants((DependencyObject)window.FindName("StudioContentsList")).OfType<Button>()
+                    .Single(b => Equals(b.Content, "移除失效记录") && b.DataContext is ManagerContent content && content.Id == missingEntry.Id);
+                var missingContent = (ManagerContent)missingContentButton.DataContext;
+                Check(missingContentButton.IsVisible && missingContent.CanDismiss && !missingContent.CanOpen && !missingContent.CanReturn
+                    && missingContent.State.Contains("文件已不存在"), "missing content has a visible inline removal action and accurate disabled open and return states");
+                var missingRow = drawerList.Items.Cast<DrawerRow>().Single(r => r.Id == added.Id);
+                Check(!missingRow.Preview.Any(p => p.Id == missingEntry.Id) && missingRow.Summary.Contains("1 项失效"),
+                    "canvas preview excludes confirmed missing files and names the cleanup action in its summary");
+                SaveManagerPreview(window, storage.Resolve("manager-inline-missing.png"));
                 window.ShowSettings(SettingsSection.Recovery); await window.WaitForIdleAsync(); window.UpdateLayout();
                 var missingButton = Descendants((DependencyObject)window.FindName("RecoveryList")).OfType<Button>()
                     .Single(b => Equals(b.Content, "移除失效记录") && b.DataContext is RecoveryProblem p && p.EntryId == missingEntry.Id);
@@ -441,6 +537,9 @@ internal static class ManagerChecks
                     && !window.RecoveryProblems.Any(p => p.EntryId == missingEntry.Id),
                     "manager removes missing membership, retains history and clears its recovery warning");
                 ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Check(!((ItemsControl)window.FindName("StudioContentsList")).Items.Cast<ManagerContent>().Any(c => c.Id == missingEntry.Id)
+                    && missingRow.MissingCount == 0 && !missingRow.Summary.Contains("项失效"),
+                    "cleanup immediately refreshes Studio rows and the canvas summary without stale missing entries");
                 window.SetManagerMode(false);
                 Check(await window.RemoveDrawerAsync(added.Id) && window.Panels.Count == 2, "manager removes a drawer after background restoration");
                 await window.WaitForIdleAsync();
