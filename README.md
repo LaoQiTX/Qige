@@ -17,6 +17,8 @@
   <a href="docs/user-guide.md">使用指南</a> ·
   <a href="docs/README.md">项目文档</a> ·
   <a href="docs/roadmap.md">开发计划</a> ·
+  <a href="LICENSE">MIT 许可证</a> ·
+  <a href="ASSET-ATTRIBUTION.md">资产声明</a> ·
   <a href="https://github.com/LaoQiTX/Qige/issues">反馈问题</a>
 </p>
 

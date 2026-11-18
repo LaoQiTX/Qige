@@ -107,6 +107,8 @@ internal sealed class ShortcutPanel : IDisposable
     public event Action<bool>? FoldedChanged;
     internal IPanelDropTarget DropTarget => dropTarget ?? throw new InvalidOperationException("拖放尚未注册。");
     public event Action? Disposed;
+    internal Action<string>? OpenItem { get; set; }
+    internal Func<string, int, bool>? ReorderItem { get; set; }
     internal Func<string, NativeDesktop.Point, bool>? DropOnAnotherPanel { get; set; }
     internal Func<IReadOnlyList<string>, uint, uint, uint>? MappedDropEffect { get; set; }
     internal Func<IReadOnlyList<string>, uint, bool>? MappedDrop { get; set; }
@@ -570,7 +572,7 @@ internal sealed class ShortcutPanel : IDisposable
                 else
                 {
                     SelectAt(x, y);
-                    if (selected >= 0 && returnToDesktop != null)
+                    if (selected >= 0 && (returnToDesktop != null || ReorderItem != null))
                     {
                         pressedItem = selected; iconDragging = false;
                         DesktopAttachment.GetCursorPos(out iconStart);
@@ -599,7 +601,15 @@ internal sealed class ShortcutPanel : IDisposable
                         iconGhost = new IconDragGhost(items[pressedItem].Icon, cursor);
                     }
                     iconGhost?.Move(cursor);
-                    if (iconDragging) SetCursor(LoadCursor(0, (nint)(IsDesktopAt(cursor) ? 32512 : 32648)));
+                    if (iconDragging)
+                    {
+                        var local = cursor;
+                        DesktopAttachment.ScreenToClient(Handle, ref local);
+                        var target = ReorderIndex(local.X, local.Y);
+                        if (hovered != target) { hovered = target; Render(); }
+                        var accepted = target >= 0 || IsDesktopAt(cursor) || Instances.Values.Any(panel => panel != this && panel.IsAtPoint(cursor));
+                        SetCursor(LoadCursor(0, (nint)(accepted ? 32512 : 32648)));
+                    }
                 }
                 else
                 {
@@ -645,7 +655,11 @@ internal sealed class ShortcutPanel : IDisposable
             case 0x203:
                 if (HitTitle(y) && x < Width - 82 * scale) { ToggleManual(); return 0; }
                 var item = HitItem(x, y);
-                if (item >= 0) Process.Start(new ProcessStartInfo(items[item].Path) { UseShellExecute = true });
+                if (item >= 0)
+                {
+                    if (OpenItem != null) OpenItem(items[item].Path);
+                    else ShellItem.Open(items[item].Path);
+                }
                 return 0;
             case 0x2A3:
                 PointerLeave(); return 0;
@@ -719,11 +733,31 @@ internal sealed class ShortcutPanel : IDisposable
         CancelIconGesture(); // Remove the ghost before checking the target window.
         if (didDrag && path != null)
         {
-            if (DropOnAnotherPanel?.Invoke(path, point) == true) { }
+            var local = point;
+            DesktopAttachment.ScreenToClient(Handle, ref local);
+            if (IsAtPoint(point)) TryReorderAt(path, local.X, local.Y);
+            else if (DropOnAnotherPanel?.Invoke(path, point) == true) { }
             else if (IsDesktopAt(point)) returnToDesktop?.Invoke(path);
             else report("已取消拖出：请拖到桌面空白处松开。");
         }
         UpdateHoverAfterMove();
+    }
+
+    private int ReorderIndex(int x, int y)
+    {
+        if (!IsExpanded || items.Count == 0 || ReorderItem == null || HitTitle(y)
+            || x < 14 * scale || x >= (logicalWidth - 14) * scale) return -1;
+        var fullY = y / scale + (expandsUpward ? logicalHeight - displayHeight : 0);
+        if (fullY < BodyTop || fullY > logicalHeight - (expandsUpward ? 49 : 8)) return -1;
+        var column = (int)((x / scale - 14) / CellWidth);
+        var row = (int)((fullY - BodyTop + scrollOffset) / RowHeight);
+        return Math.Min(items.Count - 1, row * Columns + column);
+    }
+
+    internal bool TryReorderAt(string path, int x, int y)
+    {
+        var index = ReorderIndex(x, y);
+        return !InteractionBlocked && index >= 0 && ReorderItem?.Invoke(path, index) == true;
     }
 
     private void CancelIconGesture()

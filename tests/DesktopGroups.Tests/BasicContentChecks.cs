@@ -14,6 +14,13 @@ internal static class BasicContentChecks
         data.EnsureWritable();
         var catalog = new DrawerCatalog(data, desktop);
         Check(catalog.Settings.Version == 1 && catalog.Stores["default"].Profile.Version == 1, "unchanged beta profile loads");
+        var brokenLink = Path.Combine(desktop, "失效文件夹.lnk");
+        NativeShortcut.Write(brokenLink, Path.Combine(desktop, "已移走的文件夹"));
+        var brokenLinkReported = false;
+        try { ShellItem.ValidateOpen(brokenLink); }
+        catch (IOException error) { brokenLinkReported = error.Message.Contains("快捷方式目标已失效", StringComparison.Ordinal); }
+        Check(brokenLinkReported && File.Exists(brokenLink), "opening a folder shortcut with a missing target reports the failure and preserves the shortcut");
+        File.Delete(brokenLink);
         var ordinary = Path.Combine(desktop, "中文 文档.bin");
         var payload = new byte[5 * 1024 * 1024];
         Random.Shared.NextBytes(payload);

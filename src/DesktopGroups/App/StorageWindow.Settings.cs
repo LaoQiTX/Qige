@@ -8,6 +8,17 @@ internal enum SettingsSection { General, Recovery, About }
 
 internal sealed partial class StorageWindow
 {
+    private void OpenContent(string path)
+    {
+        try { ShellItem.Open(path); }
+        catch (Exception error)
+        {
+            ShowControl();
+            Status("无法打开：" + error.Message);
+            MessageBox.Show(this, error.Message, "无法打开此项目", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     internal void ShowSettings(SettingsSection section = SettingsSection.General)
     {
         RefreshStartup(); RefreshBackupControls(); _ = RefreshBackupListAsync();
@@ -67,4 +78,10 @@ internal sealed partial class StorageWindow
         if (!File.Exists(guide)) throw new IOException("使用指南未找到，请检查软件文件是否完整。");
         Process.Start(new ProcessStartInfo(guide) { UseShellExecute = true });
     });
+
+    private void OpenProjectClick(object sender, RoutedEventArgs e) => OpenExternalPage("https://github.com/LaoQiTX/Qige");
+    private void SupportProjectClick(object sender, RoutedEventArgs e) => OpenExternalPage("https://ifdian.net/a/QiTongXue");
+
+    private void OpenExternalPage(string address) => Try(() =>
+        Process.Start(new ProcessStartInfo(address) { UseShellExecute = true }));
 }

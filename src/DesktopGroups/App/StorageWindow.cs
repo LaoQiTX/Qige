@@ -167,6 +167,8 @@ internal sealed partial class StorageWindow : Window
                 if (runtime != null) _ = RunStoreAsync(runtime, "归还桌面并解除分组", copy => { copy.ReturnAndUngroup(path); return []; });
             });
         runtime = new DrawerRuntime(definition, row, panel);
+        panel.OpenItem = OpenContent;
+        panel.ReorderItem = (path, index) => ReorderDesktopContent(definition.Id, path, index);
         panel.DropOnAnotherPanel = (path, point) => DropBetweenDrawers(runtime, path, point);
         if (definition.Kind == DrawerKind.FolderMapping)
         {

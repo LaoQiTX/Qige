@@ -19,7 +19,7 @@ internal sealed partial class StorageWindow
         if (e.OriginalSource is FrameworkElement { DataContext: ManagerContent { CanOpen: true } item })
         {
             DrawerContentSource.AssertUsable(item.Path);
-            Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
+            OpenContent(item.Path);
         }
     });
 

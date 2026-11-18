@@ -163,7 +163,7 @@ internal sealed partial class StorageWindow
         menu.Items.Add(DrawerAction(menu, runtime, "open", "打开", "Open", () =>
         {
             DrawerContentSource.AssertUsable(item.Path);
-            Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
+            OpenContent(item.Path);
         }, item.Available));
         menu.Items.Add(DrawerAction(menu, runtime, "location", "打开所在位置", "Location", () =>
         {
@@ -190,6 +190,36 @@ internal sealed partial class StorageWindow
         ShowDrawerActionMenu(menu, runtime);
     }
 
+    internal bool ReorderDesktopContent(string drawerId, string path, int index)
+    {
+        if (!runtimes.TryGetValue(drawerId, out var runtime)
+            || runtime.Busy || closing || maintenanceBusy || exitAfterOperations || runtime.Definition.Removing) return false;
+        var contents = BuildContents(runtime.Row.Store).ToList();
+        var visible = contents.Where(item => item.ShowOnDesktop).ToList();
+        var source = visible.FindIndex(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+        if (source < 0 || index < 0 || index >= visible.Count) return false;
+        if (source == index) return true;
+        var moved = visible[source];
+        visible.RemoveAt(source);
+        visible.Insert(index, moved);
+        var next = 0;
+        SaveContentOrder(runtime, contents.Select(item => item.ShowOnDesktop ? visible[next++].Id : item.Id).ToList());
+        Status("抽屉顺序已保存，已切换为手动排序。");
+        return true;
+    }
+
+    private void SaveContentOrder(DrawerRuntime runtime, List<string> order)
+    {
+        if (order.Count > 20000) throw new IOException("手动排序最多支持 20000 项。");
+        var previous = runtime.Definition.ManualOrder;
+        var previousSort = runtime.Definition.Sort;
+        runtime.Definition.ManualOrder = order;
+        runtime.Definition.Sort = DrawerSort.Manual;
+        try { catalog.Save(); }
+        catch { runtime.Definition.ManualOrder = previous; runtime.Definition.Sort = previousSort; throw; }
+        RefreshItems(runtime);
+    }
+
     private void NudgeContent(DrawerRuntime runtime, HashSet<string> selection, int delta)
     {
         if (runtime.Busy || runtime != SelectedRuntime || closing || maintenanceBusy || exitAfterOperations) return;
@@ -201,13 +231,7 @@ internal sealed partial class StorageWindow
             if (neighbor < 0 || neighbor >= order.Count || !selection.Contains(order[index]) || selection.Contains(order[neighbor])) continue;
             (order[index], order[neighbor]) = (order[neighbor], order[index]);
         }
-        var previous = runtime.Definition.ManualOrder;
-        var previousSort = runtime.Definition.Sort;
-        runtime.Definition.ManualOrder = order;
-        runtime.Definition.Sort = DrawerSort.Manual;
-        try { catalog.Save(); }
-        catch { runtime.Definition.ManualOrder = previous; runtime.Definition.Sort = previousSort; throw; }
-        RefreshItems(runtime);
+        SaveContentOrder(runtime, order);
     }
 
     private void SortContentClick(object sender, RoutedEventArgs e) => Try(() =>

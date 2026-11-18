@@ -69,7 +69,7 @@ internal sealed partial class StorageWindow
                 || !ShortcutStore.Exists(entry, path)) throw new IOException("入口已归还或暂不可用，请重新打开菜单。");
             action();
         }
-        Add("open", "打开", () => WithFile(() => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })), !runtime.Busy);
+        Add("open", "打开", () => WithFile(() => OpenContent(path)), !runtime.Busy);
         Add("location", "打开所在位置", () => WithFile(() =>
         {
             var info = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };

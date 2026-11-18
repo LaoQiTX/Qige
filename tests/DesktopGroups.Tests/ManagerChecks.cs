@@ -313,6 +313,10 @@ internal static class ManagerChecks
                 Check(((FrameworkElement)window.FindName("AboutSettingsPage")).IsVisible
                     && ((TextBox)window.FindName("SettingsDataPath")).Text == demoRoot,
                     "settings navigation exposes the real data directory and version in the same dialog");
+                var aboutButtons = Descendants((DependencyObject)window.FindName("AboutSettingsPage")).OfType<Button>()
+                    .Select(button => button.Content as string).ToHashSet(StringComparer.Ordinal);
+                Check(aboutButtons.Contains("项目主页") && aboutButtons.Contains("爱发电支持"),
+                    "about page exposes optional project and sponsor links without opening a dialog");
                 window.UpdateLayout(); SaveManagerPreview(window, storage.Resolve("manager-settings-about.png"));
                 ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(drawerList.SelectedItem == workRow && ((FrameworkElement)window.FindName("StudioView")).IsVisible,
@@ -714,6 +718,12 @@ internal static class ManagerChecks
                 cancelClose.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 first.SavePreview(storage.Resolve("drawer-preview.png"));
                 var closingStore = window.Catalog.Stores["default"];
+                var orderDrawer = window.Catalog.Settings.Drawers.Single(drawer => drawer.Id == "default");
+                var orderEntries = closingStore.Active.ToArray();
+                Check(orderEntries.Length > 1 && window.ReorderDesktopContent("default", closingStore.StoredPath(orderEntries[0]), 1)
+                    && orderDrawer.Sort == DrawerSort.Manual
+                    && orderDrawer.ManualOrder.Take(2).SequenceEqual(new[] { orderEntries[1].Id, orderEntries[0].Id }),
+                    "reordering an item inside its desktop drawer persists manual order");
                 var closingEntry = closingStore.Active.First();
                 File.WriteAllText(closingEntry.OriginalPath, "existing desktop entry");
                 window.RequestExit();

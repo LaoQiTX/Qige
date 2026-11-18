@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [string]$Version = '1.0.1',
+    [string]$Version = '1.0.2',
     [switch]$FrameworkDependent,
     [switch]$Installer,
     [string]$InnoSetupCompiler
@@ -41,6 +41,8 @@ Invoke-ProjectEnvironment {
         Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination (Join-Path $packageFolder 'assets') -Recurse
         Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination $packageFolder
         Copy-Item -LiteralPath (Join-Path $projectRoot 'CHANGELOG.md') -Destination $packageFolder
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE') -Destination $packageFolder
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'ASSET-ATTRIBUTION.md') -Destination $packageFolder
         $launcher = @('@echo off','start "" "%~dp0Qige.exe" --demo','') -join [Environment]::NewLine
         [IO.File]::WriteAllText((Join-Path $packageFolder '打开样例.cmd'), $launcher, [Text.Encoding]::ASCII)
         [IO.File]::WriteAllText((Join-Path $packageFolder 'package.json'), (@{

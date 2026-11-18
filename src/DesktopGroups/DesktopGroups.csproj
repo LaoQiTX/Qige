@@ -8,9 +8,12 @@
     <Product>栖格 Qige</Product>
     <Title>栖格 Qige</Title>
     <Description>轻量的 Windows 桌面分区整理工具</Description>
-    <Version>1.0.1</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Authors>LaoQiTX</Authors>
+    <Copyright>Copyright © 2026 LaoQiTX</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Version>1.0.2</Version>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <FileVersion>1.0.2.0</FileVersion>
     <ApplicationIcon>..\..\assets\brand\qige.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

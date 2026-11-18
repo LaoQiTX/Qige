@@ -1012,6 +1012,11 @@
                       <Button Content="打开隔离样例" Click="DemoClick" Margin="0,0,8,8" />
                     </WrapPanel>
                     <TextBlock Text="样例使用独立内容，可体验界面与布局操作。" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="0,4,0,0" />
+                    <TextBlock Text="项目与支持" FontWeight="SemiBold" Margin="0,22,0,10" />
+                    <WrapPanel>
+                      <Button Content="项目主页" Click="OpenProjectClick" Margin="0,0,8,8" />
+                      <Button Content="爱发电支持" Click="SupportProjectClick" Margin="0,0,8,8" />
+                    </WrapPanel>
                   </StackPanel>
                 </Grid>
               </ScrollViewer>

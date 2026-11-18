@@ -253,7 +253,7 @@ internal sealed partial class StorageWindow
         if (sender is not FrameworkElement { DataContext: ManagerContent item }) return;
         if (item.Kind != DrawerContentKind.Managed) DrawerContentSource.AssertUsable(item.Path);
         else if (!File.Exists(item.Path) && !Directory.Exists(item.Path)) throw new IOException("入口文件暂不可用，请检查桌面或归还状态。");
-        Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
+        OpenContent(item.Path);
     });
     private void ReturnItemClick(object sender, RoutedEventArgs e) => Try(() =>
     {
