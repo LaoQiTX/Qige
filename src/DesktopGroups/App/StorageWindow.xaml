@@ -507,7 +507,7 @@
               </StackPanel>
               <ComboBox x:Name="CanvasMonitorBox" Grid.Row="1" DisplayMemberPath="Label" Margin="0,12,0,0" HorizontalAlignment="Left" MinWidth="210" MaxWidth="430" FontSize="11" Padding="8,4" SelectionChanged="CanvasMonitorChanged" AutomationProperties.Name="沙盘显示器筛选" />
             </Grid>
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="21,0,13,16">
+            <ScrollViewer x:Name="CanvasScroll" Grid.Row="1" PreviewMouseWheel="CanvasScrollWheel" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="21,0,13,16">
               <StackPanel>
                 <ListBox x:Name="CanvasDrawerList" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource BentoItem}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" SelectionChanged="CanvasSelectionChanged" AutomationProperties.Name="空间沙盘抽屉">
                   <ListBox.ItemsPanel>

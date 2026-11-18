@@ -22,9 +22,11 @@
 
 <p align="center">Windows 11 x64 · 安装包 / 便携版 · 中文界面</p>
 
+[![栖格 Qige 桌面实景：多个分类抽屉沿屏幕边缘排列，右下角展开游戏工具抽屉](docs/images/qige-desktop-showcase.png)](docs/images/qige-desktop-showcase.png)
+
 ## 看看栖格
 
-本文介绍 v1.0.0 正式版。功能和验收进度见 [v1.0.0 基本功能清单](docs/v1-basic-features.md)。
+本文介绍 v1.0 系列正式版。功能和验收进度见 [v1.0.0 基本功能清单](docs/v1-basic-features.md)。
 
 把个人桌面上的文件、文件夹和快捷方式拖进抽屉，按工作、娱乐或自己的习惯分组。抽屉可以自由摆放、调整大小、吸附对齐，也能折叠成标题条，在鼠标移入时展开。
 

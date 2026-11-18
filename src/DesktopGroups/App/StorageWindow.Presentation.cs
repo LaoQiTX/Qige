@@ -120,6 +120,16 @@ internal sealed partial class StorageWindow
     {
         if (!initializing && !refreshingViews) RefreshManagerViews();
     }
+
+    private void CanvasScrollWheel(object sender, MouseWheelEventArgs e)
+    {
+        // The card list's hidden ScrollViewer otherwise handles the wheel first.
+        if (sender is not ScrollViewer scroll || scroll.ScrollableHeight <= 0 || e.Delta == 0) return;
+        if (e.Delta > 0) scroll.LineUp();
+        else scroll.LineDown();
+        e.Handled = true;
+    }
+
     private void TargetMonitorChanged(object sender, SelectionChangedEventArgs e) => Try(() =>
     {
         if (initializing || refreshingViews || updating || SelectedRuntime is not { } r || r.Row.Store.Profile.Locked

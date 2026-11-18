@@ -8,7 +8,7 @@
   #error InstallerOutputDir is required
 #endif
 #ifndef NumericVersion
-  #define NumericVersion "1.0.0.0"
+  #define NumericVersion "1.0.1.0"
 #endif
 
 [Setup]

@@ -241,6 +241,30 @@ internal static class ManagerChecks
                 var drawerList = (ListBox)window.FindName("DrawerList");
                 Check(((FrameworkElement)window.FindName("CanvasView")).Visibility == Visibility.Visible && canvasList.Items.Count == 2,
                     "canvas opens by default with the real drawer count");
+                var canvasScroll = (ScrollViewer)window.FindName("CanvasScroll");
+                var canvasHeight = canvasScroll.Height;
+                var canvasSelection = canvasList.SelectedItem;
+                try
+                {
+                    canvasScroll.Height = 120;
+                    canvasScroll.ScrollToTop();
+                    window.UpdateLayout();
+                    var card = (ListBoxItem)canvasList.ItemContainerGenerator.ContainerFromIndex(0);
+                    var cardText = Descendants(card).OfType<TextBlock>().First();
+                    Check(canvasScroll.ScrollableHeight > 0, "the constrained canvas viewport has overflow");
+                    cardText.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = Mouse.PreviewMouseWheelEvent });
+                    window.UpdateLayout();
+                    Check(canvasScroll.VerticalOffset > 0, "the canvas scrolls down when the wheel is used over card content");
+                    cardText.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, 120) { RoutedEvent = Mouse.PreviewMouseWheelEvent });
+                    window.UpdateLayout();
+                    Check(canvasScroll.VerticalOffset == 0 && canvasList.SelectedItem == canvasSelection,
+                        "the canvas scrolls back up without changing the selected drawer");
+                }
+                finally
+                {
+                    canvasScroll.Height = canvasHeight;
+                    window.UpdateLayout();
+                }
                 var workRow = drawerList.Items.Cast<DrawerRow>().Single(r => r.Name == "工作");
                 canvasList.SelectedItem = workRow;
                 Check(drawerList.SelectedItem == workRow && ((TextBlock)window.FindName("SelectedTitle")).Text == "工作",
