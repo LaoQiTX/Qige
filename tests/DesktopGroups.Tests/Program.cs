@@ -14,6 +14,17 @@ internal static class Program
             storage = new AppStorage(Path.Combine(storage.Root, "runs", Guid.NewGuid().ToString("N")));
             storage.EnsureWritable();
             storage.ConfigureTemporaryDirectory();
+            var crossVolume = Array.IndexOf(args, "--cross-volume-test");
+            if (crossVolume >= 0 && crossVolume + 1 < args.Length) return BasicContentChecks.CrossVolume(storage, args[crossVolume + 1]);
+            if (args.Contains("--recycle-test"))
+            {
+                var test = storage.Resolve("qige-recycle-test.txt");
+                File.WriteAllText(test, "isolated recycle test");
+                RecycleBin.Send(test);
+                Console.WriteLine("PASS Windows recycled generated file");
+                return 0;
+            }
+            if (args.Contains("--basic-content-test")) return BasicContentChecks.Run(storage);
             if (args.Contains("--backup-test")) return BackupChecks.Run(storage);
             if (args.Contains("--p0-test")) return P0Checks.Run(storage);
             if (args.Contains("--layout-test")) return DrawerLayoutChecks.Run(storage);

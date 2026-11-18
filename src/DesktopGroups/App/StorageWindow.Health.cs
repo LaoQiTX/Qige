@@ -34,14 +34,11 @@ internal sealed partial class StorageWindow
     }
     private async Task LoadRuntimeIconsAsync(DrawerRuntime r, string signature)
     {
-        var store = r.Row.Store;
-        var active = store.Active.Select(e => e.Id).ToHashSet();
-        var entries = store.Profile.Entries.Select(e => (e.Id, Name: Path.GetFileNameWithoutExtension(e.OriginalPath),
-            Path: active.Contains(e.Id) ? store.StoredPath(e) : e.OriginalPath, Original: e.OriginalPath, e.Hash)).ToArray();
-        var loaded = await Task.WhenAll(entries.Select(async e =>
-            (e.Id, e.Name, e.Path, Icon: await iconCache.LoadAsync(e.Id + ":" + e.Hash + ":" + e.Path, e.Path, e.Original))));
-        if (disposed || !runtimes.ContainsKey(r.Definition.Id) || r.ItemsSignature != signature) return;
-        r.Panel.SetPreparedItems(loaded.Where(e => active.Contains(e.Id)).Select(e => (e.Name, e.Path, e.Icon)));
+        var entries = BuildContents(r.Row.Store).Where(item => item.CanOpen).ToArray();
+        var loaded = await Task.WhenAll(entries.Select(async item =>
+            (item.ShowOnDesktop, item.Name, item.Path, Icon: await iconCache.LoadAsync(item.IconKey, item.Path, item.OriginalPath))));
+        if (disposed || runtimes.GetValueOrDefault(r.Definition.Id) != r || r.ItemsSignature != signature) return;
+        r.Panel.SetPreparedItems(loaded.Where(item => item.ShowOnDesktop).Select(item => (item.Name, item.Path, item.Icon)));
         UpdateRow(r);
         if (Selected?.Id == r.Definition.Id) FillContents(r.Row.Store);
     }
@@ -101,6 +98,7 @@ internal sealed partial class StorageWindow
         maxUiDelay = Math.Max(maxUiDelay, Math.Max(0, elapsed - lastHeartbeat - desktopTimer.Interval.TotalMilliseconds));
         lastHeartbeat = elapsed;
         if (closing || maintenanceBusy) return;
+        if (watchdogTicks % 2 == 0) _ = CheckExternalContentsAsync();
         if (++watchdogTicks % 15 == 0)
         {
             if (watcher == null) RecreateDesktopWatcher();
@@ -197,6 +195,13 @@ internal sealed partial class StorageWindow
                         r.Row.Store.DesktopPath, storage.Resolve($"storage/{id}"), "Operation"));
             }
             if (disposed) return;
+            var transfers = await fileWorker.Run(() => MappedFileOperations.ReadUnfinished(storage));
+            if (disposed) return;
+            TransferRecoveryLabel.Visibility = transfers.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            TransferRecoveryLabel.Text = transfers.Count == 0 ? "" : $"{transfers.Count} 项传输待检查。请比较源位置、目标和暂存副本。\n" +
+                string.Join("\n\n", transfers.Take(5).Select(transfer => $"源：{transfer.Source}\n目标：{transfer.Destination}" +
+                    (transfer.Staging == null ? "" : $"\n暂存：{transfer.Staging}") + (transfer.Holding == null ? "" : $"\n源暂存：{transfer.Holding}"))) +
+                (transfers.Count > 5 ? "\n完整记录位于数据目录 recovery/file-transfers。" : "");
             recoveryProblems.Clear(); foreach (var item in collected) recoveryProblems.Add(item);
             SettingsButtonLabel.Text = collected.Count == 0 ? "设置" : $"设置 · {collected.Count} 项待处理";
             RecoverySettingsTab.Content = collected.Count == 0 ? "运行与恢复" : $"运行与恢复 · {collected.Count}";
@@ -216,7 +221,7 @@ internal sealed partial class StorageWindow
         Try(() =>
         {
             var path = Equals(element.Tag, "original") ? problem.OriginalPath : problem.StoredPath;
-            if (File.Exists(path))
+            if (File.Exists(path) || Directory.Exists(path))
             {
                 var info = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
                 info.ArgumentList.Add("/select,"); info.ArgumentList.Add(path); Process.Start(info);
@@ -277,9 +282,14 @@ internal sealed partial class StorageWindow
             var destination = await fileWorker.Run(() =>
             {
                 var file = storage.Resolve($"recovery/exports/{Guid.NewGuid():N}/{Path.GetFileName(p.StoredPath)}");
+                if (Directory.Exists(p.StoredPath))
+                {
+                    MappedFileOperations.CopyTree(p.StoredPath, file, default);
+                    return file;
+                }
                 if (!File.Exists(p.StoredPath)) throw new IOException("收纳文件不可用，未导出。");
                 Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-                VerifiedTransfer.Copy(p.StoredPath, file);
+                VerifiedTransfer.Copy(p.StoredPath, file, ordinary: !ShortcutInfo.IsShortcut(p.StoredPath));
                 return file;
             });
             Status("副本已另存至 " + destination + "；原文件和分组记录保留。");
@@ -327,6 +337,12 @@ internal sealed partial class StorageWindow
     internal async Task<bool> RemoveDrawerAsync(string id)
     {
         if (closing || maintenanceBusy || exitAfterOperations || !runtimes.TryGetValue(id, out var r) || r.Busy) { Status("请等待当前文件操作完成。"); return false; }
+        if (r.Definition.Kind == DrawerKind.FolderMapping)
+        {
+            r.Definition.Removing = true;
+            try { catalog.Save(); } catch { r.Definition.Removing = false; throw; }
+            return RemoveDrawer(id);
+        }
         if (!r.Definition.Removing && !await BackupNowAsync("移除抽屉前备份", true)) return false;
         r.Definition.Removing = true; r.Paused = true; catalog.Save();
         if (!await RunStoreAsync(r, "移除前归还", store => store.RestoreAll())) return false;

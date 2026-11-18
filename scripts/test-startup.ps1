@@ -1,9 +1,27 @@
 #requires -Version 7.0
-param([ValidateSet('Debug','Release')][string]$Configuration = 'Release', [string]$Executable)
+param(
+    [ValidateSet('Debug','Release')][string]$Configuration = 'Release',
+    [string]$Executable,
+    [string]$Archive
+)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if (-not $Executable) { $Executable = Join-Path $projectRoot "src/DesktopGroups/bin/$Configuration/net10.0-windows/Qige.exe" }
-$testRoot = Join-Path $projectRoot ('.build/startup-smoke/' + [Guid]::NewGuid().ToString('N'))
+$runRoot = Join-Path $projectRoot ('.build/startup-smoke/' + [Guid]::NewGuid().ToString('N'))
+if ($Archive) {
+    if ($Executable) { throw 'Choose either -Archive or -Executable.' }
+    $Archive = (Resolve-Path -LiteralPath $Archive).Path
+    $extractionRoot = Join-Path $runRoot 'extracted'
+    Expand-Archive -LiteralPath $Archive -DestinationPath $extractionRoot
+    $packageFolders = @(Get-ChildItem -LiteralPath $extractionRoot -Directory)
+    if ($packageFolders.Count -ne 1) { throw 'Expected a single top-level directory in the portable ZIP.' }
+    $Executable = Join-Path $packageFolders[0].FullName 'Qige.exe'
+    $testRoot = Join-Path $packageFolders[0].FullName 'QigeData'
+    if (Test-Path -LiteralPath $testRoot) { throw 'The portable ZIP must not contain user data.' }
+} else {
+    if (-not $Executable) { $Executable = Join-Path $projectRoot "src/DesktopGroups/bin/$Configuration/net10.0-windows/Qige.exe" }
+    $testRoot = $runRoot
+}
+$Executable = (Resolve-Path -LiteralPath $Executable).Path
 [IO.Directory]::CreateDirectory((Join-Path $testRoot 'config')) | Out-Null
 # No memberships: the real entry point may inspect the desktop, never collect it.
 [IO.File]::WriteAllText((Join-Path $testRoot 'config/drawers.json'), '{"Version":1,"Drawers":[]}')
@@ -17,7 +35,7 @@ function Launch([bool]$background) {
     $info = [Diagnostics.ProcessStartInfo]::new($Executable)
     $info.UseShellExecute = $false
     $info.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
-    $info.ArgumentList.Add('--data-dir'); $info.ArgumentList.Add($testRoot)
+    if (-not $Archive) { $info.ArgumentList.Add('--data-dir'); $info.ArgumentList.Add($testRoot) }
     if ($background) { $info.ArgumentList.Add('--background') }
     return [Diagnostics.Process]::Start($info)
 }
@@ -47,7 +65,7 @@ try {
         Start-Sleep -Milliseconds 100
     }
     Check ($resident.MainWindowHandle -ne 0) 'the resident manager opens on the first foreground request'
-    [pscustomobject]@{Passed=$results.Count;Results=@($results);Executable=$Executable;ResidentReadyMs=$readyMs;Scope='Warm process startup, zero drawers; excludes Windows logon and cold disk costs';RealDesktopFilesMoved=$false} |
+    [pscustomobject]@{Passed=$results.Count;Results=@($results);Executable=$Executable;Archive=$Archive;ResidentReadyMs=$readyMs;Scope='Warm process startup, zero drawers; excludes Windows logon and cold disk costs';RealDesktopFilesMoved=$false} |
         ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $testRoot 'results.json') -Encoding utf8
     Write-Output "Results: $testRoot"
 }

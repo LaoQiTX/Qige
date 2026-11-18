@@ -8,7 +8,7 @@
   #error InstallerOutputDir is required
 #endif
 #ifndef NumericVersion
-  #define NumericVersion "0.1.0.0"
+  #define NumericVersion "1.0.0.0"
 #endif
 
 [Setup]
@@ -135,10 +135,27 @@ begin
 end;
 
 function InitializeUninstall: Boolean;
+var
+  DataDir, Executable: String;
+  Status: Integer;
 begin
   Result := not CheckForMutexes('Local\Qige.Application') and not DataIsBusy;
   if not Result then
+  begin
     SuppressibleMsgBox('请先在栖格中选择“退出并归还全部”，再卸载。QigeData 将被保留。', mbError, MB_OK, IDOK);
+    Exit;
+  end;
+  DataDir := ExpandConstant('{app}\QigeData');
+  if not DirExists(DataDir) then Exit;
+  Executable := ExpandConstant('{app}\Qige.exe');
+  Result := False;
+  if Exec(Executable, '--verify-safe-uninstall --data-dir "' + DataDir + '"', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, Status) then
+    Result := Status = 0;
+  if not Result then
+  begin
+    Log('Uninstall stopped because managed data could not be verified as returned: ' + DataDir);
+    SuppressibleMsgBox('检测到未归还的内容或无法读取恢复记录。请打开栖格，在“运行与恢复”中检查后选择“退出并归还全部”。数据目录：' + DataDir, mbError, MB_OK, IDOK);
+  end;
 end;
 
 procedure RemoveKnownStartup;

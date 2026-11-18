@@ -46,7 +46,7 @@ internal sealed partial class StorageWindow
     }
     private void OpenDrawerSettingsMenu(DrawerRuntime runtime)
     {
-        var menu = CreateDrawerActionMenu(runtime, "抽屉设置"); if (menu == null) return;
+        var menu = CreateDrawerActionMenu(runtime, $"抽屉设置 · {runtime.Panel.ItemCount} 项"); if (menu == null) return;
         var mode = DrawerAction(menu, runtime, "expansion", "展开方式", "Mode");
         mode.InputGestureText = runtime.Panel.ManualExpansion ? "手动" : runtime.Panel.IsFolded ? "悬停" : "常开";
         void Choice(MenuItem parent, string key, string title, bool selected, Action action)

@@ -111,11 +111,11 @@ internal static class StoragePanelCheck
             var logical = ReadEffect(data, "Logical Performed DropEffect");
             if (performed != 0 || logical != 2) throw new InvalidOperationException("未正确通知拖出方无需再次删除源文件。");
             panel.PointerLeave();
-            var rejectedFile = Path.Combine(store.DesktopPath, "不支持.txt"); File.WriteAllText(rejectedFile, "not moved");
+            var rejectedFile = storage.Resolve("outside-desktop.txt"); File.WriteAllText(rejectedFile, "not moved");
             using var unsupportedData = new ShellSampleData(rejectedFile);
             var unsupported = unsupportedData.Data;
             effect = 2; panel.DropTarget.DragEnter(unsupported, 1, point, ref effect);
-            if (effect != 0 || panel.IsExpanded || !File.Exists(rejectedFile)) throw new InvalidOperationException("不支持的文件没有被正确拒绝。");
+            if (effect != 0 || panel.IsExpanded || !File.Exists(rejectedFile)) throw new InvalidOperationException("桌面外的文件没有被正确拒绝。");
             panel.DropTarget.DragLeave();
             if (errors.Count > 0) throw new InvalidOperationException(string.Join("；", errors));
             using (var ghost = new IconDragGhost(ShortcutInfo.LoadIcon(store.StoredPath(store.Active[0])), new NativeDesktop.Point { X = 800, Y = 240 }))

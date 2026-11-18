@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using Microsoft.Win32;
 
 namespace DesktopGroups;
@@ -12,61 +13,116 @@ internal sealed partial class StorageWindow
     {
         var menu = CreateDrawerActionMenu(runtime, "内容操作"); if (menu == null) return;
         var ready = !runtime.Busy && !exitAfterOperations;
-        menu.Items.Add(DrawerAction(menu, runtime, "new", "新建网址快捷方式…", "New", () => ShowNewWebsite(runtime), ready));
-        menu.Items.Add(DrawerAction(menu, runtime, "add", "添加桌面快捷方式…", "Open", () => AddDesktopShortcuts(runtime), ready));
-        var paste = DrawerAction(menu, runtime, "paste", "粘贴桌面快捷方式", "Paste", () =>
+        menu.Items.Add(DrawerPasteAction(menu, runtime, ready));
+        menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
+        if (runtime.Definition.Kind == DrawerKind.Desktop)
         {
-            var paths = ClipboardDesktopPaths(runtime);
-            if (paths.Length == 0 || !QueueAddPaths(runtime.Definition.Id, paths)) Status("剪贴板中没有可添加的个人桌面快捷方式。");
-        }, ready && ClipboardDesktopPaths(runtime).Length > 0);
-        paste.ToolTip = "将剪贴板中的个人桌面 .lnk / .url 收纳到此抽屉"; menu.Items.Add(paste);
+            AddDesktopContentActions(menu, runtime, ready);
+        }
+        else
+        {
+            menu.Items.Add(DrawerAction(menu, runtime, "new-folder", "新建文件夹…", "New", () => CreateMapped(runtime, true), ready));
+            menu.Items.Add(DrawerAction(menu, runtime, "new-text", "新建文本文档…", "New", () => CreateMapped(runtime, false), ready));
+            menu.Items.Add(DrawerAction(menu, runtime, "relocate", "重定位映射目录…", "Location", () => RelocateMapping(runtime), ready));
+        }
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
         var directory = DrawerAction(menu, runtime, "directory", "打开抽屉文件夹", "Location", () =>
             Process.Start(DrawerLocationStartInfo(runtime.Definition.Id, terminal: false)));
-        directory.ToolTip = runtime.Row.Store.DirectoryPath; menu.Items.Add(directory);
+        directory.ToolTip = runtime.Definition.MappedPath ?? runtime.Row.Store.DirectoryPath; menu.Items.Add(directory);
         var terminal = DrawerAction(menu, runtime, "terminal", "在抽屉目录打开终端", "Terminal", () =>
             Process.Start(DrawerLocationStartInfo(runtime.Definition.Id, terminal: true)));
-        terminal.ToolTip = runtime.Row.Store.DirectoryPath; menu.Items.Add(terminal);
+        terminal.ToolTip = runtime.Definition.MappedPath ?? runtime.Row.Store.DirectoryPath; menu.Items.Add(terminal);
         menu.Items.Add(DrawerAction(menu, runtime, "refresh", "刷新内容", "Refresh", () => _ = RefreshDrawerContentsAsync(runtime), ready));
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
         menu.Items.Add(DrawerAction(menu, runtime, "manage", "管理此抽屉内容", "Manage", () => OpenDrawerContents(runtime)));
         ShowDrawerActionMenu(menu, runtime);
     }
+    private void AddContentsMenuClick(object sender, RoutedEventArgs e) => Try(() =>
+    {
+        if (sender is not Button { IsEnabled: true } button || SelectedRuntime is not { Definition.Kind: DrawerKind.Desktop } runtime) return;
+        var menu = CreateDrawerActionMenu(runtime, "添加内容");
+        if (menu == null) return;
+        menu.PlacementTarget = button;
+        menu.Placement = PlacementMode.Bottom;
+        AddDesktopContentActions(menu, runtime, !runtime.Busy && !exitAfterOperations);
+        ShowDrawerActionMenu(menu, runtime);
+    });
+
+    private void AddDesktopContentActions(ContextMenu menu, DrawerRuntime runtime, bool ready)
+    {
+        void Add(string key, string title, string icon, Action action, bool enabled, string help)
+        {
+            var item = DrawerAction(menu, runtime, key, title, icon, action, enabled);
+            item.ToolTip = help;
+            menu.Items.Add(item);
+        }
+
+        Add("add", "收纳桌面文件…", "Properties", () => AddDesktopFiles(runtime), ready && !demo, "将个人桌面上的文件移入此抽屉");
+        Add("add-folder", "收纳桌面文件夹…", "Location", () => PickManagedFolder(runtime), ready && !demo, "将个人桌面上的文件夹移入此抽屉");
+        menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
+        Add("reference", "引用外部文件…", "Properties", () => ChooseReferences(runtime, false), ready && !demo, "添加文件入口，原文件留在原处");
+        Add("reference-folder", "引用外部文件夹…", "Location", () => ChooseReferences(runtime, true), ready && !demo, "添加文件夹入口，原文件夹留在原处");
+        menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
+        Add("new", "新建网址快捷方式…", "New", () => ShowNewWebsite(runtime), ready, "为网址创建一个可打开的入口");
+    }
+
     internal ProcessStartInfo DrawerLocationStartInfo(string drawerId, bool terminal)
     {
-        var directory = runtimes[drawerId].Row.Store.DirectoryPath;
-        Directory.CreateDirectory(directory);
+        var runtime = runtimes[drawerId];
+        var directory = runtime.Definition.MappedPath ?? runtime.Row.Store.DirectoryPath;
+        if (runtime.Definition.Kind == DrawerKind.FolderMapping) DrawerContentSource.AssertUsable(directory, directory: true);
+        else Directory.CreateDirectory(directory);
         return new ProcessStartInfo(terminal ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe") : directory)
             { WorkingDirectory = directory, UseShellExecute = true };
     }
-    private string[] ClipboardDesktopPaths(DrawerRuntime runtime)
+    private MenuItem DrawerPasteAction(ContextMenu menu, DrawerRuntime runtime, bool ready)
     {
+        var mapping = runtime.Definition.Kind == DrawerKind.FolderMapping;
+        var canPaste = false;
         try
         {
-            if (!Clipboard.ContainsFileDropList()) return [];
-            var paths = Clipboard.GetFileDropList().Cast<string>().ToArray();
-            return runtime.Row.Store.CanAccept(paths) ? paths : [];
+            canPaste = ready && Clipboard.ContainsFileDropList() && (!demo || !mapping
+                && runtime.Row.Store.CanAccept(Clipboard.GetFileDropList().Cast<string>().ToArray()));
         }
-        catch (System.Runtime.InteropServices.ExternalException) { return []; }
+        catch (System.Runtime.InteropServices.ExternalException) { /* Clipboard temporarily belongs to another app. */ }
+
+        var paste = DrawerAction(menu, runtime, "paste", "粘贴", "Paste", () =>
+        {
+            if (mapping) PasteIntoMapping(runtime);
+            else PasteIntoOrganizer(runtime);
+        }, canPaste);
+        paste.ToolTip = mapping ? "将文件粘贴到映射目录" : "收纳桌面文件，其他位置的文件添加为引用";
+        return paste;
     }
-    private void AddDesktopShortcuts(DrawerRuntime runtime)
+
+    private void AddDesktopFiles(DrawerRuntime runtime)
     {
-        if (runtime.Busy || maintenanceBusy || closing) return;
-        var picker = new OpenFileDialog { Title = "选择个人桌面的快捷方式", InitialDirectory = runtime.Row.Store.DesktopPath,
-            Filter = "快捷方式 (*.lnk;*.url)|*.lnk;*.url", Multiselect = true };
+        if (runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing) return;
+        var picker = new OpenFileDialog { Title = "选择个人桌面的文件", InitialDirectory = runtime.Row.Store.DesktopPath,
+            Filter = "所有文件 (*.*)|*.*", Multiselect = true, DereferenceLinks = false };
         ShowControl();
         if (picker.ShowDialog(this) != true) return;
-        if (!runtime.Row.Store.CanAccept(picker.FileNames)) { Status("请选择个人桌面根目录中的 .lnk / .url。其他位置的文件暂不收纳。"); return; }
+        if (!runtime.Row.Store.CanAccept(picker.FileNames)) { Status("请选择个人桌面根目录中的文件。其他位置可添加引用。"); return; }
         Try(() => QueueAddPaths(runtime.Definition.Id, picker.FileNames));
     }
+    private void PickManagedFolder(DrawerRuntime runtime)
+    {
+        if (demo || runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing || exitAfterOperations) return;
+        ShowControl();
+        var picker = new OpenFolderDialog { Title = "选择个人桌面上的文件夹", InitialDirectory = runtime.Row.Store.DesktopPath, Multiselect = true };
+        if (picker.ShowDialog(this) != true) return;
+        if (!QueueAddPaths(runtime.Definition.Id, picker.FolderNames))
+            Status("只收纳个人桌面根目录中的文件夹。其他目录可以映射或引用。");
+    }
+
     private async Task RefreshDrawerContentsAsync(DrawerRuntime runtime)
     {
+        await RefreshExternalContentsAsync(runtime);
+        if (runtime.Definition.Kind == DrawerKind.FolderMapping) return;
         await RunStoreAsync(runtime, "刷新内容", store => runtime.Paused ? store.RestoreAll() : store.Synchronize());
         RefreshItems(runtime); await ScanRecoveryAsync();
     }
-    private void AddContentClick(object sender, RoutedEventArgs e) { if (SelectedRuntime is { } runtime) AddDesktopShortcuts(runtime); }
     private async void RefreshContentClick(object sender, RoutedEventArgs e) { if (SelectedRuntime is { } runtime) await RefreshDrawerContentsAsync(runtime); }
-    private void NewWebsiteClick(object sender, RoutedEventArgs e) { if (SelectedRuntime is { } runtime) ShowNewWebsite(runtime); }
     private string? newWebsiteDrawerId;
     private void ShowNewWebsite(DrawerRuntime runtime)
     {
@@ -84,7 +140,7 @@ internal sealed partial class StorageWindow
     }
     internal async Task<bool> CreateWebsiteAsync(string drawerId, string name, string url)
     {
-        if (!runtimes.TryGetValue(drawerId, out var runtime) || runtime.Busy || maintenanceBusy || closing) return false;
+        if (!runtimes.TryGetValue(drawerId, out var runtime) || runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing) return false;
         try
         {
             var path = ShortcutStore.WebsitePath(runtime.Row.Store.DesktopPath, name, url);

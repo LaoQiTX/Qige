@@ -19,6 +19,13 @@ internal sealed partial class StorageWindow
     private void OpenDrawerItemMenu(DrawerRuntime runtime, string path)
     {
         if (itemMenu != null) itemMenu.IsOpen = false;
+        if (disposed || closing || maintenanceBusy || runtime.Definition.Removing) { runtime.Panel.CloseItemMenu(); return; }
+        var external = runtime.ExternalItems.FirstOrDefault(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+        if (external != null)
+        {
+            OpenExternalItemMenu(runtime, external);
+            return;
+        }
         var entry = runtime.Row.Store.Active.FirstOrDefault(e => string.Equals(runtime.Row.Store.StoredPath(e), path, StringComparison.OrdinalIgnoreCase));
         if (disposed || closing || maintenanceBusy || runtime.Definition.Removing || entry == null)
         {
@@ -32,10 +39,10 @@ internal sealed partial class StorageWindow
         });
         menu.Style = (Style)menu.FindResource(typeof(ContextMenu));
         itemMenu = menu;
-        var name = Path.GetFileNameWithoutExtension(entry.OriginalPath);
+        var name = entry.IsOrdinaryFile ? Path.GetFileName(entry.OriginalPath) : Path.GetFileNameWithoutExtension(entry.OriginalPath);
         menu.Items.Add(new MenuItem
         {
-            Header = name, InputGestureText = "快捷方式", ToolTip = name, IsEnabled = false,
+            Header = name, InputGestureText = entry.IsDirectory ? "文件夹" : entry.IsOrdinaryFile ? "文件" : "快捷方式", ToolTip = name, IsEnabled = false,
             Style = (Style)menu.FindResource("DrawerMenuHeading")
         });
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
@@ -59,11 +66,11 @@ internal sealed partial class StorageWindow
             if (disposed || closing || maintenanceBusy || exitAfterOperations || runtime.Definition.Removing || runtime.Busy)
                 throw new InvalidOperationException("请等待文件操作结束后重试。");
             if (!runtime.Row.Store.Active.Any(e => string.Equals(runtime.Row.Store.StoredPath(e), path, StringComparison.OrdinalIgnoreCase))
-                || !File.Exists(path)) throw new IOException("入口已归还或暂不可用，请重新打开菜单。");
+                || !ShortcutStore.Exists(entry, path)) throw new IOException("入口已归还或暂不可用，请重新打开菜单。");
             action();
         }
         Add("open", "打开", () => WithFile(() => Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })), !runtime.Busy);
-        Add("location", "打开快捷方式所在位置", () => WithFile(() =>
+        Add("location", "打开所在位置", () => WithFile(() =>
         {
             var info = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
             info.ArgumentList.Add("/select,"); info.ArgumentList.Add(path); Process.Start(info);
@@ -82,6 +89,15 @@ internal sealed partial class StorageWindow
         {
             _ = RunStoreAsync(runtime, "归还并解除分组", store => { store.ReturnAndUngroup(path); return []; });
         }), !runtime.Busy);
+        menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
+        var ready = !runtime.Busy && !exitAfterOperations;
+        var selection = new ManagerContent[] { new(entry.Id, name, entry.OriginalPath, path, "", "", null, true) };
+        Add("copy", "复制", () => WithFile(() => SetFileClipboard([path], false)), ready);
+        Add("cut", "剪切（归还并解除分组）", () => WithFile(() =>
+            _ = ReturnManagedSelectionAsync(runtime, selection, cut: true)), ready && !demo);
+        menu.Items.Add(DrawerPasteAction(menu, runtime, ready));
+        Add("recycle", "移到回收站…", () => WithFile(() => RecycleManaged(runtime, selection)), ready && !demo);
+        menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
         Add("manage", "管理此抽屉", () => OpenDrawerContents(runtime));
         menu.Closed += (_, _) =>
         {

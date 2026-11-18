@@ -8,13 +8,23 @@ using System.Windows.Media.Imaging;
 
 namespace DesktopGroups;
 
-internal sealed record ManagerContent(string Id, string Name, string OriginalPath, string Path, string State, string Detail, BitmapSource? Icon, bool CanReturn, bool CanOpen = true, bool CanDismiss = false);
+internal sealed record ManagerContent(string Id, string Name, string OriginalPath, string Path, string State, string Detail, BitmapSource? Icon, bool CanReturn, bool CanOpen = true, bool CanDismiss = false)
+{
+    public DrawerContentKind Kind { get; init; }
+    public bool CanUnlink => Kind == DrawerContentKind.Reference;
+    public bool ShowOnDesktop { get; init; }
+    public string IconKey { get; init; } = "";
+    public string Type { get; init; } = "";
+    public DateTime Modified { get; init; }
+    public long Size { get; init; }
+}
 internal sealed record ManagerMonitor(string? Device, string Label);
 
 internal sealed partial class StorageWindow
 {
     private ListCollectionView? canvasRows, studioRows;
     private IReadOnlyList<ManagerContent> currentContents = [];
+    private string? studioSelectionOwner;
     private IReadOnlyList<DesktopMonitor> managerMonitors = [];
     private bool refreshingViews;
     private string monitorSignature = "";
@@ -130,10 +140,15 @@ internal sealed partial class StorageWindow
         StudioNoMatches.Visibility = studioRows.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
         UpdateDetail();
     }
+    private static long FileSize(string path)
+    {
+        try { return new FileInfo(path).Length; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return 0; }
+    }
     private IReadOnlyList<ManagerContent> BuildContents(ShortcutStore store)
     {
         var active = store.Active.Select(e => e.Id).ToHashSet();
-        return store.Profile.Entries.Select(e =>
+        var managed = store.Profile.Entries.Select(e =>
         {
             var collected = active.Contains(e.Id);
             var path = collected ? store.StoredPath(e) : e.OriginalPath;
@@ -142,14 +157,47 @@ internal sealed partial class StorageWindow
             var missing = recoveryProblems.Any(p => p.CanDismiss && p.EntryId == e.Id && p.OriginalPath == e.OriginalPath);
             var state = missing ? "文件已不存在 · 可移除记录" : collected ? "已收纳" : "在桌面／待检查";
             var coordinates = e.OriginalX.HasValue && e.OriginalY.HasValue ? $"原坐标 ({e.OriginalX}, {e.OriginalY})" : "未记录原坐标";
-            return new ManagerContent(e.Id, Path.GetFileNameWithoutExtension(e.OriginalPath), e.OriginalPath, path,
-                state, $"{state} · {coordinates}", missing ? null : icon, collected && !missing, !missing, missing);
+            return new ManagerContent(e.Id, e.IsOrdinaryFile ? Path.GetFileName(e.OriginalPath) : Path.GetFileNameWithoutExtension(e.OriginalPath), e.OriginalPath, path,
+                state, $"{state} · {coordinates}", missing ? null : icon, collected && !missing, !missing, missing)
+            {
+                ShowOnDesktop = collected && !missing, IconKey = key, Type = e.IsDirectory ? "文件夹" : Path.GetExtension(path), Modified = File.GetLastWriteTimeUtc(path), Size = FileSize(path)
+            };
+        });
+        var runtime = runtimes.Values.FirstOrDefault(candidate => candidate.Row.Store == store);
+        if (runtime == null) return managed.ToArray();
+        var external = runtime.ExternalItems.Select(item =>
+        {
+            iconCache.TryGet(item.IconKey, out var icon);
+            var state = item.Kind == DrawerContentKind.Mapped ? "映射目录" : item.Available ? "外部引用" : "引用已失效";
+            return new ManagerContent(item.Id, item.Name, item.Path, item.Path, state, $"{state} · {item.Type}",
+                icon, false, item.Available)
+            {
+                Kind = item.Kind, ShowOnDesktop = item.Available, IconKey = item.IconKey,
+                Type = item.Type, Modified = item.Modified, Size = item.Size
+            };
+        });
+        var combined = managed.Concat(external);
+        return (runtime.Definition.Sort switch
+        {
+            DrawerSort.Name => combined.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            DrawerSort.Type => combined.OrderBy(item => item.Type, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            DrawerSort.Modified => combined.OrderByDescending(item => item.Modified).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            DrawerSort.Size => combined.OrderByDescending(item => item.Size).ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => ApplyManualOrder(combined, runtime.Definition.ManualOrder)
         }).ToArray();
     }
+    private static IEnumerable<ManagerContent> ApplyManualOrder(IEnumerable<ManagerContent> contents, List<string> order)
+    {
+        if (order.Count == 0) return contents;
+        var positions = order.Select((id, index) => (id, index)).ToDictionary(item => item.id, item => item.index, StringComparer.OrdinalIgnoreCase);
+        return contents.OrderBy(item => positions.GetValueOrDefault(item.Id, int.MaxValue));
+    }
+
     private void RefreshRowPresentation(DrawerRuntime runtime)
     {
         var contents = BuildContents(runtime.Row.Store);
         runtime.Row.MissingCount = contents.Count(e => e.CanDismiss);
+        runtime.Row.ContentCount = contents.Count;
         runtime.Row.Preview = contents.Where(e => !e.CanDismiss).Take(4).ToArray();
         runtime.Row.Placement = PlacementFor(runtime.Row);
     }
@@ -158,11 +206,33 @@ internal sealed partial class StorageWindow
         var query = SearchBox.Text.Trim();
         var contents = currentContents.Where(e => query.Length == 0 || (Selected?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
             || e.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
-        ContentActions.IsEnabled = SelectedRuntime is { Busy: false } && !closing && !maintenanceBusy && !exitAfterOperations;
+        var runtime = SelectedRuntime;
+        var canEdit = runtime is { Busy: false, Definition.Removing: false } && !closing && !maintenanceBusy && !exitAfterOperations;
+        var priorSelection = studioSelectionOwner == Selected?.Id
+            ? StudioContentsList.SelectedItems.Cast<ManagerContent>().Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
+        studioSelectionOwner = Selected?.Id;
         StudioContentsList.ItemsSource = contents;
+        foreach (var item in contents.Where(item => priorSelection.Contains(item.Id))) StudioContentsList.SelectedItems.Add(item);
+        var mapping = runtime?.Definition.Kind == DrawerKind.FolderMapping;
+        ContentActions.Visibility = runtime == null ? Visibility.Collapsed : Visibility.Visible;
+        ContentActions.IsEnabled = canEdit;
+        AddContentsMenuButton.Visibility = runtime?.Definition.Kind == DrawerKind.Desktop ? Visibility.Visible : Visibility.Collapsed;
+        AddContentsMenuButton.IsEnabled = canEdit;
+        var operationLabel = mapping ? "文件操作" : "整理操作";
+        MappedOperationsButton.Content = operationLabel + " ▾";
+        System.Windows.Automation.AutomationProperties.SetName(MappedOperationsButton, operationLabel);
+        AddSelectedButton.Visibility = mapping ? Visibility.Collapsed : Visibility.Visible;
+        AddSelectedButton.IsEnabled = canEdit && !demo;
+        RelocateButton.Visibility = mapping ? Visibility.Visible : Visibility.Collapsed;
+        RelocateButton.IsEnabled = canEdit;
+        OpenDrawerDirectoryButton.Content = mapping ? "打开映射目录" : "打开抽屉目录";
+        SelectedDrawerKindLabel.Text = mapping ? "文件夹映射" : "桌面整理";
+        StudioExternalIssue.Text = SelectedRuntime?.ExternalIssue ?? "";
+        StudioExternalIssue.Visibility = StudioExternalIssue.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         StudioEmptyLabel.Visibility = contents.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         StudioTitle.Text = Selected?.Name ?? "选择一个抽屉";
-        StudioSubtitle.Text = Selected == null ? "从左侧选择抽屉，查看内容与操作" : $"桌面整理 · {currentContents.Count} 个入口 · {contents.Length} 项匹配";
+        StudioSubtitle.Text = Selected == null ? "从左侧选择抽屉，查看内容与操作" : $"{Selected.NavigationGroup} · {currentContents.Count} 个入口 · {contents.Length} 项匹配";
     }
     private void AlwaysModeClick(object sender, RoutedEventArgs e) => SetFoldMode(false);
     private void ManualModeClick(object sender, RoutedEventArgs e) => Try(() => { SelectedRuntime?.Panel.SetManualMode(); UpdateDetail(); });
@@ -171,7 +241,8 @@ internal sealed partial class StorageWindow
     private void OpenItemClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (sender is not FrameworkElement { DataContext: ManagerContent item }) return;
-        if (!File.Exists(item.Path)) throw new IOException("入口文件暂不可用，请检查桌面或归还状态。");
+        if (item.Kind != DrawerContentKind.Managed) DrawerContentSource.AssertUsable(item.Path);
+        else if (!File.Exists(item.Path) && !Directory.Exists(item.Path)) throw new IOException("入口文件暂不可用，请检查桌面或归还状态。");
         Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
     });
     private void ReturnItemClick(object sender, RoutedEventArgs e) => Try(() =>
@@ -217,6 +288,25 @@ internal sealed partial class StorageWindow
     {
         if (e.Key == Key.OemComma && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
         { ShowSettings(); e.Handled = true; return; }
-        if (e.Key == Key.Escape && ModalLayer.Visibility == Visibility.Visible) { DismissModal(); e.Handled = true; }
+        if (e.Key == Key.Escape && ModalLayer.Visibility == Visibility.Visible) { DismissModal(); e.Handled = true; return; }
+        if (StudioContentsList.IsKeyboardFocusWithin && SelectedRuntime is { Definition.Kind: DrawerKind.FolderMapping } runtime && !runtime.Busy)
+        {
+            var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            if (control && e.Key is Key.C or Key.X) { Try(() => CopyMappedSelection(e.Key == Key.X)); e.Handled = true; }
+            if (control && e.Key == Key.V) { Try(() => PasteIntoMapping(runtime)); e.Handled = true; }
+            if (!control && e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None) { Try(() => RecycleMapped(runtime, SelectedMappedItems())); e.Handled = true; }
+            if (!control && e.Key == Key.F2) { Try(() => RenameMapped(runtime, SelectedMappedItems())); e.Handled = true; }
+        }
+        else if (StudioContentsList.IsKeyboardFocusWithin && SelectedRuntime is { Definition.Kind: DrawerKind.Desktop, Busy: false } organizer)
+        {
+            var control = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            var items = StudioContentsList.SelectedItems.Cast<ManagerContent>().ToArray();
+            var managed = items.Where(item => item.Kind == DrawerContentKind.Managed && item.CanReturn).ToArray();
+            if (control && e.Key == Key.C) { Try(() => SetFileClipboard(items.Where(item => item.CanOpen).Select(item => item.Path).ToArray(), false)); e.Handled = true; }
+            if (control && e.Key == Key.X) { _ = ReturnManagedSelectionAsync(organizer, managed, cut: true); e.Handled = true; }
+            if (control && e.Key == Key.V) { Try(() => PasteIntoOrganizer(organizer)); e.Handled = true; }
+            if (!control && e.Key == Key.F2 && managed.Length == 1) { Try(() => RenameManaged(organizer, managed[0])); e.Handled = true; }
+            if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None) { Try(() => RecycleManaged(organizer, managed)); e.Handled = true; }
+        }
     }
 }

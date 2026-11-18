@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([string]$Version = '0.1.0-beta.14')
+param([string]$Version = '1.0.0')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid version.' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -32,7 +32,7 @@ function Run-Setup([string]$name, [bool]$expectSuccess = $true) {
     if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'Installer exceeded its isolated test timeout.' }
     Check (($process.ExitCode -eq 0) -eq $expectSuccess) ("$name returns the expected exit status: $($process.ExitCode)")
 }
-function Run-Uninstall([string]$name) {
+function Run-Uninstall([string]$name, [bool]$expectSuccess = $true) {
     $arguments = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG=' + (Join-Path $testRoot ($name + '.log'))))
     $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $installRoot 'unins000.exe'))
     $start.UseShellExecute = $false
@@ -42,7 +42,8 @@ function Run-Uninstall([string]$name) {
     foreach ($argument in $arguments) { $start.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::Start($start)
     if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'Uninstaller exceeded its isolated test timeout.' }
-    Check ($process.ExitCode -eq 0) "$name succeeds"
+    Check (($process.ExitCode -eq 0) -eq $expectSuccess) ("$name returns the expected exit status: $($process.ExitCode)")
+    if (-not $expectSuccess) { return }
     $uninstallLog = Join-Path $testRoot ($name + '.log')
     $finished = $false
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
@@ -66,6 +67,8 @@ Set-Content -LiteralPath $shortcut -Value "[InternetShortcut]`r`nURL=https://exa
 Set-Content -LiteralPath $config -Value '{"InstallerFixture":true}' -Encoding utf8
 $shortcutHash = (Get-FileHash -LiteralPath $shortcut).Hash
 $configHash = (Get-FileHash -LiteralPath $config).Hash
+$drawerConfig = Join-Path $installRoot 'QigeData/config/drawers.json'
+Set-Content -LiteralPath $drawerConfig -Value '{"Version":1,"Drawers":[{"Id":"default","Name":"常用","Kind":0}]}' -Encoding utf8
 Set-Content -LiteralPath (Join-Path $installRoot 'keep-user-file.txt') -Value 'This user-owned file must be retained.'
 Set-Content -LiteralPath (Join-Path $installRoot 'DesktopGroups.exe') -Value 'obsolete program fixture'
 Set-Content -LiteralPath (Join-Path $installRoot 'DesktopGroups.dll') -Value 'obsolete program fixture'
@@ -84,6 +87,13 @@ $expectedCommand = '"' + (Join-Path $installRoot 'Qige.exe') + '" --data-dir "' 
 New-ItemProperty -LiteralPath $runKeyPath -Name $knownName -Value $expectedCommand -PropertyType String | Out-Null
 New-ItemProperty -LiteralPath $runKeyPath -Name $changedName -Value 'manually modified fixture' -PropertyType String | Out-Null
 try {
+    $guard = Join-Path $installRoot 'QigeData/recovery/backup-restore.json'
+    Set-Content -LiteralPath $guard -Value '{}' -Encoding utf8
+    try {
+        Run-Uninstall 'uninstall-blocked-by-recovery' $false
+        Check (Test-Path -LiteralPath (Join-Path $installRoot 'Qige.exe')) 'uninstall guard keeps executable available for recovery'
+        Check ((Get-FileHash -LiteralPath $shortcut).Hash -eq $shortcutHash) 'blocked uninstall preserves the test data'
+    } finally { Remove-Item -LiteralPath $guard }
     Run-Uninstall 'uninstall'
     Check (-not (Test-Path -LiteralPath (Join-Path $installRoot 'Qige.exe'))) 'uninstall removes the program executable'
     Check ((Get-FileHash -LiteralPath $shortcut).Hash -eq $shortcutHash -and (Get-FileHash -LiteralPath $config).Hash -eq $configHash) 'uninstall preserves QigeData byte for byte'

@@ -9,6 +9,8 @@ internal sealed class StoredShortcut
     public string OriginalPath { get; set; } = "";
     public string StoredRelative { get; set; } = "";
     public string Key { get; set; } = "";
+    public bool IsOrdinaryFile { get; set; }
+    public bool IsDirectory { get; set; }
     public string Hash { get; set; } = "";
     public string Phase { get; set; } = "Restored";
     public bool TransferVerified { get; set; }
@@ -43,7 +45,7 @@ internal sealed class ShortcutStore
     private readonly string profileRelative;
     private readonly string storeRelative;
     public ShortcutProfile Profile { get; private set; }
-    public IReadOnlyList<StoredShortcut> Active => Profile.Entries.Where(entry => (entry.Phase is "Stored" or "Updating") && File.Exists(StoredPath(entry))).ToArray();
+    public IReadOnlyList<StoredShortcut> Active => Profile.Entries.Where(entry => (entry.Phase is "Stored" or "Updating") && Exists(entry, StoredPath(entry))).ToArray();
     public string DesktopPath => desktop;
     public string DirectoryPath => storage.Resolve(storeRelative);
     public event Action? Changed;
@@ -56,27 +58,35 @@ internal sealed class ShortcutStore
         this.storeRelative = storeRelative;
         var profile = storage.Resolve(profileRelative);
         Profile = File.Exists(profile) ? JsonSerializer.Deserialize<ShortcutProfile>(File.ReadAllText(profile)) ?? throw new IOException("收纳记录无法读取。") : new();
-        if (Profile.Version != 1) throw new IOException("收纳记录版本不支持。");
+        if (Profile.Version is not (1 or 2)) throw new IOException("收纳记录版本不支持。");
         foreach (var entry in Profile.Entries.Concat(Profile.Ungrouped))
         {
+            if ((entry.IsOrdinaryFile && (Profile.Version < 2 || entry.Key.Length != 0 || entry.PendingRelative != null || entry.Versions.Count != 0))
+                || entry.IsDirectory && !entry.IsOrdinaryFile || !entry.IsDirectory && entry.IsOrdinaryFile == ShortcutInfo.IsShortcut(entry.OriginalPath)) throw new IOException("收纳记录的文件类型无效。");
             ValidateOriginal(entry.OriginalPath);
-            ValidateStored(entry.StoredRelative);
-            if (entry.PendingRelative != null) ValidateStored(entry.PendingRelative);
-            foreach (var version in entry.Versions) ValidateStored(version);
+            ValidateStored(entry.StoredRelative, entry);
+            if (entry.PendingRelative != null) ValidateStored(entry.PendingRelative, entry);
+            foreach (var version in entry.Versions) ValidateStored(version, entry);
         }
     }
 
+    internal static bool Exists(StoredShortcut entry, string path) => entry.IsDirectory ? Directory.Exists(path) : File.Exists(path);
     public string StoredPath(StoredShortcut entry) => storage.Resolve(entry.StoredRelative);
     public bool CanAccept(IReadOnlyList<string> paths)
     {
         if (paths.Count == 0) return false;
         try
         {
-            foreach (var path in paths) { ValidateOriginal(path); if (!File.Exists(path)) return false; }
+            foreach (var path in paths)
+            {
+                ValidateOriginal(path);
+                var directory = AssertSource(Path.GetFullPath(path));
+                if (directory && MappedFileOperations.IsAtOrInside(storage.Root, path)) return false;
+            }
             return true;
         }
         catch (IOException) { return false; }
-        catch (ArgumentException) { return false; }
+        catch (ArgumentException) { return false; } catch (UnauthorizedAccessException) { return false; }
     }
     public void Save() => storage.WriteJson(profileRelative, Profile);
 
@@ -121,15 +131,23 @@ internal sealed class ShortcutStore
     {
         path = Path.GetFullPath(path);
         ValidateOriginal(path);
-        var info = ShortcutInfo.Read(path);
+        var directory = AssertSource(path);
+        if (directory)
+        {
+            if (!MappedFileOperations.SameDrive(path, DirectoryPath)) RecycleBin.AssertAvailable(path);
+            if (MappedFileOperations.IsAtOrInside(storage.Root, path)) throw new IOException("不能收纳包含栖格数据的目录。");
+        }
+        var ordinary = directory || !ShortcutInfo.IsShortcut(path);
+        var key = ordinary ? "" : ShortcutInfo.Read(path).Key;
         var entry = Profile.Entries.SingleOrDefault(item => item.OriginalPath.Equals(path, StringComparison.OrdinalIgnoreCase));
         if (entry == null)
         {
-            entry = new StoredShortcut { OriginalPath = path, Key = info.Key, OriginalX = position?.X, OriginalY = position?.Y };
+            entry = new StoredShortcut { OriginalPath = path, Key = key, IsOrdinaryFile = ordinary, IsDirectory = directory, OriginalX = position?.X, OriginalY = position?.Y };
             entry.StoredRelative = NewStoredPath(entry);
             Profile.Entries.Add(entry);
         }
-        else if (entry.Key != info.Key) throw new IOException("这个已归组入口的目标已改变，请先归还并检查，未自动合并。");
+        else if (entry.Key != key || entry.IsDirectory != directory) throw new IOException("这个已归组入口的目标已改变，请先归还并检查，未自动合并。");
+        if (ordinary) Profile.Version = 2;
         Save();
         Collect(entry);
         Changed?.Invoke();
@@ -154,12 +172,13 @@ internal sealed class ShortcutStore
     public IReadOnlyList<string> Synchronize()
     {
         var issues = new List<string>();
-        foreach (var entry in Profile.Entries.Where(item => (item.Phase is "Stored" or "Updating") && File.Exists(item.OriginalPath) && File.Exists(StoredPath(item))))
+        foreach (var entry in Profile.Entries.Where(item => (item.Phase is "Stored" or "Updating") && Exists(item, item.OriginalPath) && Exists(item, StoredPath(item))))
         {
             try
             {
                 ResolvePending(entry);
-                if (!File.Exists(entry.OriginalPath)) continue;
+                if (!Exists(entry, entry.OriginalPath)) continue;
+                if (entry.IsOrdinaryFile) throw new IOException("桌面出现同名文件，两份均已保留。");
                 if (ShortcutInfo.Read(entry.OriginalPath).Key != entry.Key)
                     throw new IOException("桌面同名入口目标不同，已保留两份，未自动合并。");
                 BeginUpdate(entry);
@@ -237,7 +256,7 @@ internal sealed class ShortcutStore
 
     private void ForgetRestored(StoredShortcut entry)
     {
-        if (entry.Phase != "Restored" || !File.Exists(entry.OriginalPath) || File.Exists(StoredPath(entry)))
+        if (entry.Phase != "Restored" || !Exists(entry, entry.OriginalPath) || Exists(entry, StoredPath(entry)))
             throw new IOException("归还尚未确认，仍保留分组与恢复记录。");
         Profile.Ungrouped.Add(entry);
         Profile.Entries.Remove(entry);
@@ -245,6 +264,13 @@ internal sealed class ShortcutStore
     }
 
     private void RestoreEntry(StoredShortcut entry)
+    {
+        if (entry.IsDirectory) { TransferManagedDirectory(entry, restore: true); return; }
+        if (entry.IsOrdinaryFile) { TransferOrdinary(entry, restore: true); return; }
+        RestoreShortcut(entry);
+    }
+
+    private void RestoreShortcut(StoredShortcut entry)
     {
         ResolvePending(entry);
         if (entry.Phase == "Restoring" && File.Exists(entry.OriginalPath) && File.Exists(StoredPath(entry)))
@@ -272,7 +298,72 @@ internal sealed class ShortcutStore
         entry.Phase = "Restored"; Save();
     }
 
+    private void TransferManagedDirectory(StoredShortcut entry, bool restore)
+    {
+        var original = entry.OriginalPath;
+        var stored = StoredPath(entry);
+        if (File.Exists(original) || File.Exists(stored) || Directory.Exists(original) && Directory.Exists(stored))
+            throw new IOException("存在同名项目，原件与收纳内容均已保留。");
+        var source = restore ? stored : original;
+        var destination = restore ? original : stored;
+        if (Directory.Exists(source))
+        {
+            if (MappedFileOperations.IsAtOrInside(storage.Root, original)) throw new IOException("不能收纳或移动包含栖格数据的目录。");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            entry.Phase = restore ? "Restoring" : "Collecting";
+            Save();
+            if (MappedFileOperations.SameDrive(source, destination)) MappedFileOperations.MoveDirectoryAtomically(source, destination);
+            else new MappedFileOperations(storage).MoveDirectoryAcrossVolumes(source, destination, default, managed: true);
+        }
+        else DrawerContentSource.AssertUsable(destination, directory: true);
+        entry.Phase = restore ? "Restored" : "Stored";
+        entry.TransferVerified = true;
+        Save();
+    }
+
+    private void TransferOrdinary(StoredShortcut entry, bool restore)
+    {
+        var original = entry.OriginalPath;
+        var stored = StoredPath(entry);
+        if (Directory.Exists(original) || Directory.Exists(stored)) throw new IOException("目标路径存在同名文件夹，所有内容均已保留。");
+        var originalExists = File.Exists(original);
+        var storedExists = File.Exists(stored);
+        if (originalExists && storedExists)
+            throw new IOException("桌面和收纳位置均有副本，两份已保留。请检查并移走其中一份后重试。");
+        if (!originalExists && !storedExists) throw new IOException("两处均未找到文件，恢复记录已保留。");
+        var source = restore ? stored : original;
+        var destination = restore ? original : stored;
+        var finalPhase = restore ? "Restored" : "Stored";
+        if (!File.Exists(source))
+        {
+            AssertSourceFile(destination);
+            // A pending record may point at an incomplete copy. Never promote it as the only good copy.
+            if (entry.Phase is "Collecting" or "Restoring" && (!entry.TransferVerified || VerifiedTransfer.Hash(destination) != entry.Hash))
+                throw new IOException("上次搬移未完成校验，剩余副本和恢复记录已保留。");
+            entry.Phase = finalPhase;
+            Save();
+            return;
+        }
+        AssertSourceFile(source);
+        if (entry.Phase == (restore ? "Collecting" : "Restoring") && (!entry.TransferVerified || VerifiedTransfer.Hash(source) != entry.Hash))
+            throw new IOException("上次搬移未完成校验，剩余副本和恢复记录已保留。");
+        entry.Hash = VerifiedTransfer.Hash(source);
+        entry.Phase = restore ? "Restoring" : "Collecting";
+        entry.TransferVerified = false;
+        Save();
+        VerifiedTransfer.Move(source, destination, entry.Hash, () => { entry.TransferVerified = true; Save(); }, ordinary: true);
+        entry.Phase = finalPhase;
+        Save();
+    }
+
     private void Collect(StoredShortcut entry)
+    {
+        if (entry.IsDirectory) { TransferManagedDirectory(entry, restore: false); return; }
+        if (entry.IsOrdinaryFile) { TransferOrdinary(entry, restore: false); return; }
+        CollectShortcut(entry);
+    }
+
+    private void CollectShortcut(StoredShortcut entry)
     {
         var stored = StoredPath(entry);
         if (File.Exists(stored))
@@ -338,16 +429,31 @@ internal sealed class ShortcutStore
     }
 
     private string NewStoredPath(StoredShortcut entry) => $"{storeRelative}/{entry.Id}/{Guid.NewGuid():N}/{Path.GetFileName(entry.OriginalPath)}";
-    private void ValidateStored(string relative)
+    private void ValidateStored(string relative, StoredShortcut entry)
     {
         var full = storage.Resolve(relative);
         var root = storage.Resolve(storeRelative) + Path.DirectorySeparatorChar;
-        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !ShortcutInfo.IsShortcut(full)) throw new IOException("收纳记录包含无效路径。");
+        if (!full.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !entry.IsDirectory && ShortcutInfo.IsShortcut(full) == entry.IsOrdinaryFile
+            || entry.IsOrdinaryFile && !Path.GetFileName(full).Equals(Path.GetFileName(entry.OriginalPath), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("收纳记录包含无效路径。");
     }
     private void ValidateOriginal(string path)
     {
-        if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), desktop, StringComparison.OrdinalIgnoreCase) || !ShortcutInfo.IsShortcut(path))
-            throw new IOException("这个原型只实际收纳你个人桌面根目录的 .lnk／.url；公共桌面与其他文件暂不移动。");
+        if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), desktop, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("只收纳个人桌面根目录中的文件。其他位置可以添加引用。");
+        _ = DrawerContentSource.Normalize(path);
         VerifiedTransfer.ValidatePath(path);
+    }
+
+    private static void AssertSourceFile(string path)
+    {
+        if (AssertSource(path)) throw new IOException("需要普通文件，已保留目录。");
+    }
+
+    private static bool AssertSource(string path)
+    {
+        var attributes = DrawerContentSource.AssertUsable(path);
+        if (attributes.HasFlag(FileAttributes.Encrypted)) throw new IOException("加密项目暂不收纳。");
+        return attributes.HasFlag(FileAttributes.Directory);
     }
 }

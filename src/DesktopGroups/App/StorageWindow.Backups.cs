@@ -146,7 +146,7 @@ internal sealed partial class StorageWindow
         {
             var manifest = await fileWorker.Run(() => Backups.Validate(backup.Directory));
             var count = manifest.Files.Count(f => f.Path.StartsWith("config/groups/", StringComparison.Ordinal));
-            var answer = MessageBox.Show(this, $"恢复 {manifest.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm} 的 {count} 个抽屉配置及托管快捷方式？\n\n会先备份当前状态、归还当前内容，再恢复所选备份。桌面同名不同内容会阻止恢复；不会覆盖。", "恢复备份", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            var answer = MessageBox.Show(this, $"恢复 {manifest.CreatedAt.LocalDateTime:yyyy-MM-dd HH:mm} 的 {count} 个抽屉配置及托管内容？\n\n会先备份当前状态、归还当前内容，再恢复所选备份。桌面同名不同内容会阻止恢复；不会覆盖。", "恢复备份", MessageBoxButton.OKCancel, MessageBoxImage.Question);
             if (answer == MessageBoxResult.OK) await RestoreBackupAsync(backup.Directory);
         }
         catch (Exception error) { Status("恢复未开始：" + error.Message); BackupStatusLabel.Text = error.Message; }

@@ -12,11 +12,11 @@ internal static class VerifiedTransfer
 {
     public static string Hash(string path)
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
-    public static void Move(string source, string destination, string expectedHash, Action? destinationVerified = null)
+    public static void Move(string source, string destination, string expectedHash, Action? destinationVerified = null, bool ordinary = false, CancellationToken cancellation = default)
     {
         if (File.Exists(destination) || Directory.Exists(destination))
             throw new IOException("目标位置已存在内容，未覆盖任何文件。");
@@ -25,20 +25,23 @@ internal static class VerifiedTransfer
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         using var handle = OpenForTransfer(source);
         using var input = new FileStream(handle, FileAccess.Read);
-        if (input.Length > 4 * 1024 * 1024) throw new IOException("此原型仅收纳不超过 4 MB 的快捷方式。");
+        if (!ordinary && input.Length > 4 * 1024 * 1024) throw new IOException("此原型仅收纳不超过 4 MB 的快捷方式。");
         if (Convert.ToHexString(SHA256.HashData(input)) != expectedHash)
             throw new IOException("源文件刚刚发生变化，本次搬移已停止。");
-        input.Position = 0;
+        EnsureSpace(destination, input.Length); input.Position = 0;
         using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
-            input.CopyTo(output);
+            CopyData(input, output, cancellation);
             output.Flush(flushToDisk: true);
         }
-        CopyStreams(source, destination);
+        CopyStreams(source, destination, cancellation);
         File.SetLastWriteTimeUtc(destination, File.GetLastWriteTimeUtc(source));
-        if (Hash(destination) != expectedHash) throw new IOException("复制校验未通过，源文件已保留。");
+        if (Hash(destination) != expectedHash || !SameStreams(source, destination)) throw new IOException("复制校验未通过，源文件已保留。");
+        cancellation.ThrowIfCancellationRequested();
         destinationVerified?.Invoke();
         MarkDeleted(handle);
+        input.Dispose();
+        AssertSourceUnlinked(source);
     }
 
     public static void RemoveDuplicate(string path, string expectedHash)
@@ -49,20 +52,48 @@ internal static class VerifiedTransfer
         if (Convert.ToHexString(SHA256.HashData(input)) != expectedHash)
             throw new IOException("文件内容已改变，未清理重复副本。");
         MarkDeleted(handle);
+        input.Dispose();
+        AssertSourceUnlinked(path);
     }
 
-    public static void Copy(string source, string destination)
+    public static void Copy(string source, string destination, bool ordinary = false, CancellationToken cancellation = default)
     {
         ValidatePath(source); ValidatePath(destination);
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
-        if (input.Length > 4 * 1024 * 1024) throw new IOException("仅支持不超过 4 MB 的快捷方式副本。");
-        var hash = Convert.ToHexString(SHA256.HashData(input)); input.Position = 0;
+        if (!ordinary && input.Length > 4 * 1024 * 1024) throw new IOException("仅支持不超过 4 MB 的快捷方式副本。");
+        EnsureSpace(destination, input.Length); var hash = Convert.ToHexString(SHA256.HashData(input)); input.Position = 0;
         using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-        { input.CopyTo(output); output.Flush(flushToDisk: true); }
-        CopyStreams(source, destination);
+        { CopyData(input, output, cancellation); output.Flush(flushToDisk: true); }
+        CopyStreams(source, destination, cancellation);
         File.SetLastWriteTimeUtc(destination, File.GetLastWriteTimeUtc(source));
-        if (Hash(destination) != hash) throw new IOException("副本校验失败，原文件仍保留。");
+        if (Hash(destination) != hash || !SameStreams(source, destination)) throw new IOException("副本校验失败，原文件仍保留。");
+    }
+
+    internal static bool SameStreams(string source, string destination)
+    {
+        var original = NamedStreamHashes(source);
+        var copy = NamedStreamHashes(destination);
+        return original.Count == copy.Count && original.All(stream => copy.TryGetValue(stream.Key, out var hash) && hash == stream.Value);
+    }
+
+    private static void CopyData(Stream source, Stream destination, CancellationToken cancellation)
+    {
+        var buffer = new byte[128 * 1024];
+        while (true)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            var read = source.Read(buffer);
+            if (read == 0) return;
+            destination.Write(buffer, 0, read);
+        }
+    }
+
+    private static void EnsureSpace(string destination, long length)
+    {
+        var drive = new DriveInfo(Path.GetPathRoot(destination)!);
+        if (drive.DriveType is DriveType.Fixed or DriveType.Removable && drive.AvailableFreeSpace < length)
+            throw new IOException("目标磁盘空间不足，源文件已保留。");
     }
 
     public static void ValidatePath(string path)
@@ -73,9 +104,12 @@ internal static class VerifiedTransfer
                 throw new IOException("原型暂不搬移经过符号链接或目录联接的文件。");
     }
 
+    internal static string NativePath(string path) => path.StartsWith("\\", StringComparison.Ordinal)
+        ? path : @"\\?\" + path;
+
     private static SafeFileHandle OpenForTransfer(string path)
     {
-        var handle = CreateFile(path, 0x80010000, 1, 0, 3, 0x08000000, 0); // READ | DELETE; share read
+        var handle = CreateFile(NativePath(path), 0x80010000, 1, 0, 3, 0x08000000, 0); // READ | DELETE; share read
         if (handle.IsInvalid)
         {
             var error = Marshal.GetLastWin32Error();
@@ -87,16 +121,34 @@ internal static class VerifiedTransfer
 
     private static void MarkDeleted(SafeFileHandle handle)
     {
+        // Unlink this name when our handle closes, even if a reader that allowed deletion is still open.
+        const int fileDispositionInfoEx = 21;
+        const uint deleteWithPosixSemantics = 0x1 | 0x2;
+        var flags = deleteWithPosixSemantics;
+        if (SetFileInformationByHandle(handle, fileDispositionInfoEx, ref flags, sizeof(uint))) return;
+        var error = Marshal.GetLastWin32Error();
+        if (error is not (1 or 50 or 87 or 120 or 124))
+            throw new Win32Exception(error, "副本已保存，但源文件未能移除；恢复记录已保留。");
+
+        // Some filesystems only support deferred deletion. Confirm the name is gone before committing.
         var disposition = new FileDisposition { Delete = true };
         if (!SetFileInformationByHandle(handle, 4, ref disposition, (uint)Marshal.SizeOf<FileDisposition>()))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "副本已保存，但源文件未能移除；恢复记录已保留。");
+    }
+
+    private static void AssertSourceUnlinked(string path)
+    {
+        try { _ = File.GetAttributes(path); }
+        catch (FileNotFoundException) { return; }
+        catch (DirectoryNotFoundException) { return; }
+        throw new IOException("副本已保存，但源路径仍被占用；请关闭占用程序后重试，恢复记录已保留。");
     }
 
     internal static Dictionary<string, string> NamedStreamHashes(string path)
     {
         ValidatePath(path);
         var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
-        var search = FindFirstStream(path, 0, out var stream, 0);
+        var search = FindFirstStream(NativePath(path), 0, out var stream, 0);
         if (search == -1)
         {
             var error = Marshal.GetLastWin32Error();
@@ -119,9 +171,9 @@ internal static class VerifiedTransfer
     }
 
     // Preserve named streams, including Windows' download origin marker.
-    private static void CopyStreams(string source, string destination)
+    private static void CopyStreams(string source, string destination, CancellationToken cancellation)
     {
-        var search = FindFirstStream(source, 0, out var stream, 0);
+        var search = FindFirstStream(NativePath(source), 0, out var stream, 0);
         if (search == -1)
         {
             var error = Marshal.GetLastWin32Error();
@@ -138,7 +190,7 @@ internal static class VerifiedTransfer
                     throw new IOException("备用数据流名称不受支持，源文件已保留。");
                 using var input = new FileStream(source + stream.Name, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
                 using var output = new FileStream(destination + stream.Name, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                input.CopyTo(output);
+                CopyData(input, output, cancellation);
                 output.Flush(flushToDisk: true);
             } while (FindNextStream(search, out stream));
             var lastError = Marshal.GetLastWin32Error();
@@ -153,6 +205,7 @@ internal static class VerifiedTransfer
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFile(string path, uint access, uint share, nint security, uint creation, uint flags, nint template);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFileInformationByHandle(SafeFileHandle file, int kind, ref FileDisposition information, uint size);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFileInformationByHandle(SafeFileHandle file, int kind, ref uint information, uint size);
     [DllImport("kernel32.dll", EntryPoint = "FindFirstStreamW", CharSet = CharSet.Unicode, SetLastError = true)] private static extern nint FindFirstStream(string path, int level, out StreamData data, uint flags);
     [DllImport("kernel32.dll", EntryPoint = "FindNextStreamW", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool FindNextStream(nint search, out StreamData data);
     [DllImport("kernel32.dll")] private static extern bool FindClose(nint search);

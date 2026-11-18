@@ -163,8 +163,34 @@ internal static class ManagerChecks
                     "new website refuses duplicate names without replacing content or marking a healthy drawer as broken");
                 websiteStore.ReturnAndUngroup(websiteStore.StoredPath(website));
                 window.SelectDrawer("default"); window.SetManagerMode(true);
-                var websiteButton = Descendants((DependencyObject)window.Content).OfType<Button>().Single(b => Equals(b.Content, "新建网址…"));
-                websiteButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.UpdateLayout();
+                var addContents = (Button)window.FindName("AddContentsMenuButton");
+                var operations = (Button)window.FindName("MappedOperationsButton");
+                var sort = (Button)window.FindName("SortContentButton");
+                var refresh = (Button)window.FindName("RefreshContentButton");
+                var workbench = (FrameworkElement)window.FindName("StudioTitle");
+                var center = (FrameworkElement)((FrameworkElement)window.FindName("ContentActions")).Parent;
+                Rect Bounds(FrameworkElement element) => element.TransformToAncestor(center).TransformBounds(new Rect(element.RenderSize));
+                var fullWidth = window.Width;
+                window.Width = window.MinWidth;
+                window.UpdateLayout();
+                Check(new[] { addContents, operations, sort, refresh }.All(button => button.IsVisible && button.IsEnabled
+                        && Bounds(button).Left >= 0 && Bounds(button).Right <= center.ActualWidth + .5)
+                    && Bounds(workbench).Right <= Bounds(addContents).Left
+                    && Bounds(addContents).Bottom <= Bounds(operations).Top
+                    && Bounds(operations).Right <= Bounds(sort).Left && Bounds(sort).Right <= Bounds(refresh).Left,
+                    "the workbench header and list controls fit in their own rows at minimum width");
+                addContents.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await Task.Delay(120);
+                var addMenu = window.ActiveItemMenu!;
+                var addActions = MenuEntries(addMenu.Items).Where(item => item.Tag is string).ToArray();
+                Check(addMenu.IsOpen && ReferenceEquals(addMenu.PlacementTarget, addContents)
+                    && addActions.Select(item => (string)item.Tag).SequenceEqual(new[] { "add", "add-folder", "reference", "reference-folder", "new" }),
+                    "the anchored Add Contents menu exposes all five desktop content actions in groups");
+                SaveMenuPreview(addMenu, storage.Resolve("manager-add-contents-menu.png"));
+                addMenu.IsOpen = false;
+                window.Width = fullWidth;
+                addActions.Single(item => Equals(item.Tag, "new")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                window.UpdateLayout();
                 Check(((FrameworkElement)window.FindName("NewWebsiteBox")).IsVisible
                     && ((TextBlock)window.FindName("WebsiteDrawerLabel")).Text.Contains("常用"), "manager content toolbar creates URLs in an explicitly named drawer");
                 SaveManagerPreview(window, storage.Resolve("manager-new-website.png"));
@@ -388,9 +414,21 @@ internal static class ManagerChecks
                 Check(itemMenu?.IsOpen == true && first.SelectedIndex == 1
                     && Equals(((MenuItem)itemMenu.Items[0]).Header, "使用说明")
                     && itemMenu.Items.OfType<MenuItem>().Where(i => i.Tag != null).Select(i => i.Tag)
-                        .SequenceEqual(new object[] { "open", "location", "properties", "return", "manage" }),
-                    "right-click selects the pointed shortcut and exposes open, location, properties, return and manage actions");
+                        .SequenceEqual(new object[] { "open", "location", "properties", "return", "copy", "cut", "paste", "recycle", "manage" }),
+                    "right-click targets the pointed item and exposes clipboard and recycle actions");
                 await Task.Delay(100);
+                var recycle = itemMenu!.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "recycle"));
+                Check(recycle.Icon is System.Windows.Shapes.Path trash
+                    && ReferenceEquals(trash.Data, itemMenu.FindResource("DrawerMenuRecycleIcon")), "the recycle command uses the trash icon");
+                var previousClipboard = Clipboard.GetDataObject();
+                try
+                {
+                    var copyItem = itemMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Tag, "copy"));
+                    copyItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                    Check(Clipboard.GetFileDropList().Cast<string>().Single() == window.Catalog.Stores["default"].StoredPath(window.Catalog.Stores["default"].Active[1]),
+                        "the desktop item's Copy command publishes the pointed file to the clipboard");
+                }
+                finally { if (previousClipboard != null) Clipboard.SetDataObject(previousClipboard, true); else Clipboard.Clear(); }
                 SaveMenuPreview(itemMenu!, storage.Resolve("drawer-item-menu.png"));
                 itemMenu!.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "location")).Focus();
                 SaveMenuPreview(itemMenu, storage.Resolve("drawer-item-menu-focused.png"));
@@ -401,7 +439,9 @@ internal static class ManagerChecks
                 first.PointerLeave();
                 Check(first.IsExpanded && first.IsInteracting, "a hover drawer stays expanded while its item menu is open");
                 itemMenu!.IsOpen = false;
-                await Task.Delay(250); // WPF raises Closed after the popup's close animation.
+                // WPF raises Closed after the popup's close animation. Wait for the actual state.
+                for (var wait = 0; wait < 25 && (window.ActiveItemMenu != null || first.IsInteracting); wait++)
+                    await Task.Delay(50);
                 Check(window.ActiveItemMenu == null && !first.IsInteracting && sourceStore.Active.Count == 18,
                     "canceling an item menu clears interaction state without changing shortcut membership");
                 first.SetFolded(false);
@@ -573,11 +613,38 @@ internal static class ManagerChecks
                 SaveManagerPreview(window, storage.Resolve("manager-studio-preview.png"));
                 window.Width = window.MinWidth; window.Height = window.MinHeight; window.UpdateLayout();
                 SaveManagerPreview(window, storage.Resolve("manager-studio-minimum.png"));
+                var studioList = (ListBox)window.FindName("StudioContentsList");
+                var studioScroll = Descendants(studioList).OfType<ScrollViewer>().Single();
+                var firstRow = (ListBoxItem)studioList.ItemContainerGenerator.ContainerFromIndex(0);
+                studioScroll.ScrollToTop(); window.UpdateLayout();
+                firstRow.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = Mouse.MouseWheelEvent });
+                window.UpdateLayout();
+                Check(studioScroll.ScrollableHeight > 0 && studioScroll.VerticalOffset > 0, "the workbench scrolls when the wheel is used over a content row");
                 window.SetManagerMode(false); window.UpdateLayout();
                 SaveManagerPreview(window, storage.Resolve("manager-canvas-minimum.png"));
                 var createButton = Descendants((DependencyObject)window.Content).OfType<Button>().First(b => Equals(b.Content, "＋ 新建抽屉"));
                 createButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
-                var confirm = Descendants((DependencyObject)window.FindName("CreateBox")).OfType<Button>().First(b => Equals(b.Content, "创建并在桌面放置"));
+                var confirm = (Button)window.FindName("ConfirmCreateButton");
+                var desktopKind = (RadioButton)window.FindName("DesktopDrawerKindCard");
+                var mappingKind = (RadioButton)window.FindName("MappingDrawerKindCard");
+                var mappingFields = (FrameworkElement)window.FindName("NewMappingFields");
+                Check(desktopKind.IsChecked == true && mappingFields.Visibility == Visibility.Collapsed, "new drawer defaults to desktop organization");
+                static void SelectKind(RadioButton card)
+                {
+                    var peer = new System.Windows.Automation.Peers.RadioButtonAutomationPeer(card);
+                    var provider = (System.Windows.Automation.Provider.ISelectionItemProvider)peer.GetPattern(System.Windows.Automation.Peers.PatternInterface.SelectionItem);
+                    provider.Select();
+                }
+                SelectKind(mappingKind);
+                Check(desktopKind.IsChecked == false && mappingKind.IsChecked == true && mappingFields.IsVisible
+                    && Equals(confirm.Content, "创建映射抽屉"), "selecting the mapping card reveals directory controls and switches the create action");
+                confirm.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Check(((TextBlock)window.FindName("CreateErrorLabel")).Text == "请选择要映射的目录。" && window.Panels.Count == 2,
+                    "mapping creation requires a directory and does not create a desktop drawer");
+                window.UpdateLayout(); SaveManagerPreview(window, storage.Resolve("manager-create-mapping-preview.png"));
+                SelectKind(desktopKind);
+                Check(mappingKind.IsChecked == false && !mappingFields.IsVisible && Equals(confirm.Content, "创建整理抽屉"),
+                    "selecting the organizer card hides mapping-only controls");
                 confirm.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(((FrameworkElement)window.FindName("CreateErrorLabel")).Visibility == Visibility.Visible && window.Panels.Count == 2,
                     "invalid creation keeps the modal open with a visible error and creates no drawer");

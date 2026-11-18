@@ -1,6 +1,6 @@
 # 项目文档
 
-这里描述栖格当前版本的行为、开发方式与后续计划。当前测试版为 **0.1.0-beta.9**，面向 Windows 11 x64。
+使用指南描述 v1.0.0 正式版。历史公开版本见 [更新记录](../CHANGELOG.md)。
 
 ## 使用栖格
 
@@ -8,17 +8,16 @@
 | --- | --- |
 | [使用指南](user-guide.md) | 安装、首次使用、抽屉操作、托盘、数据与更新 |
 | [问题排查](troubleshooting.md) | 抽屉不可见、收纳失败、冲突、异常退出和反馈 |
-| [当前发布说明](release-notes.md) | 下载文件、当前更新和已知限制 |
+| [更新记录](../CHANGELOG.md) | 开发版与历史公开版本的变更 |
 
 ## 产品与设计
 
 | 文档 | 内容 |
 | --- | --- |
-| [产品规格](product-spec.md) | 当前能力、文件语义、两类抽屉的后续规则 |
+| [产品规格](product-spec.md) | 当前能力、两类抽屉的行为与文件保护 |
 | [开发计划](roadmap.md) | 验收重点和待开发内容 |
-| [备份与 Pogget 迁移计划](backup-migration-plan.md) | 自动备份范围、恢复约束及后续个人迁移所需资料 |
+| [备份与恢复计划](backup-migration-plan.md) | 自动备份范围、恢复约束及验收要求 |
 | [设计说明](design.md) | 管理面板、桌面交互、图标与素材 |
-| [界面入口审查](interface-audit.md) | 统一设置、重复操作的合并与保留范围 |
 
 ## 开发与维护
 
@@ -29,7 +28,6 @@
 | [分发与安装](distribution.md) | ZIP、安装包、升级、卸载和单 EXE 约束 |
 | [验证说明](validation.md) | 自动检查、当前结果、测量口径和人工验收 |
 | [稳定性验收](stability-validation.md) | beta.9 稳定性修改、实机操作步骤与结果记录表 |
-| [正式版就绪评估](release-readiness.md) | 最小发布范围、剩余四组门槛与可后续增强的内容 |
 
 文档使用固定文件名，运行截图集中在 [images](images)。历史版本信息在 [CHANGELOG](../CHANGELOG.md)、[GitHub Releases](https://github.com/LaoQiTX/Qige/releases) 和 Git 历史中查询。
 

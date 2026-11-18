@@ -16,7 +16,9 @@ internal interface IPanelDropTarget
 // and WM_DROPFILES alone cannot implement expansion before a file is released.
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
 internal sealed class PanelDropTarget(Func<IReadOnlyList<string>, bool> canAccept,
-    Func<IReadOnlyList<string>, bool> receive, Action<bool, bool> dragState, Action<string> report) : IPanelDropTarget
+    Func<IReadOnlyList<string>, bool> receive,     Action<bool, bool> dragState, Action<string> report,
+    Func<IReadOnlyList<string>, uint, uint, uint>? mappedEffect = null,
+    Func<IReadOnlyList<string>, uint, bool>? receiveMapped = null) : IPanelDropTarget
 {
     private string[] paths = [];
     private bool accepted;
@@ -25,9 +27,9 @@ internal sealed class PanelDropTarget(Func<IReadOnlyList<string>, bool> canAccep
         try
         {
             paths = ReadPaths(data);
-            accepted = (effect & 2) != 0 && paths.Length > 0 && canAccept(paths);
-            effect = accepted ? 2u : 0u;
-            dragState(accepted, false);
+            accepted = paths.Length > 0 && canAccept(paths);
+            effect = SelectEffect(keys, effect);
+            dragState(effect != 0, false);
         }
         catch (Exception exception) { effect = 0; Reset(); report($"拖入未完成：{exception.Message}"); }
         return 0;
@@ -35,7 +37,7 @@ internal sealed class PanelDropTarget(Func<IReadOnlyList<string>, bool> canAccep
 
     public int DragOver(uint keys, NativeDesktop.Point point, ref uint effect)
     {
-        effect = accepted && (effect & 2) != 0 ? 2u : 0u;
+        effect = SelectEffect(keys, effect);
         return 0;
     }
 
@@ -46,19 +48,25 @@ internal sealed class PanelDropTarget(Func<IReadOnlyList<string>, bool> canAccep
         try
         {
             var finalPaths = ReadPaths(data);
-            if (!accepted || (effect & 2) == 0 || !finalPaths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase) || !canAccept(finalPaths))
+            var chosen = SelectEffect(keys, effect);
+            if (chosen == 0 || !finalPaths.SequenceEqual(paths, StringComparer.OrdinalIgnoreCase) || !canAccept(finalPaths))
             { effect = 0; return 0; }
             // The target performs the verified move itself. Explicitly tell the
             // Shell that it must not delete the source a second time.
             SetEffect(data, "Performed DropEffect", 0);
-            var success = receive(finalPaths);
-            effect = success ? 2u : 0u;
+            var success = receiveMapped != null ? receiveMapped(finalPaths, chosen) : receive(finalPaths);
+            // Mapped operations complete asynchronously. Returning COPY leaves the source intact for our worker.
+            effect = success ? (receiveMapped != null ? 1u : chosen) : 0u;
             SetEffect(data, "Logical Performed DropEffect", effect);
         }
         catch (Exception exception) { effect = 0; report($"拖入未完成：{exception.Message}"); }
         finally { Reset(keepHover: true); }
         return 0;
     }
+
+    private uint SelectEffect(uint keys, uint allowed) => !accepted ? 0 : mappedEffect != null
+        ? mappedEffect(paths, keys, allowed)
+        : allowed & 2;
 
     private void Reset(bool keepHover = false)
     {

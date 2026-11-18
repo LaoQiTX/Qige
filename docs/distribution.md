@@ -13,11 +13,11 @@
 ## 构建
 
 ```powershell
-.\publish.ps1 -Version 0.1.0-beta.14
-.\publish.ps1 -Version 0.1.0-beta.14 -Installer
+.\publish.ps1 -Version 1.0.0
+.\publish.ps1 -Version 1.0.0 -Installer
 
 # 指定已有编译器：
-.\publish.ps1 -Version 0.1.0-beta.14 -Installer -InnoSetupCompiler 'D:\Tools\InnoSetup\ISCC.exe'
+.\publish.ps1 -Version 1.0.0 -Installer -InnoSetupCompiler 'D:\Tools\InnoSetup\ISCC.exe'
 ```
 
 默认构建 Release、自带运行时的 x64 包，关闭裁剪和单文件发布。发布编译正式项目，不包含测试与诊断程序。同版本目标已存在时拒绝覆盖。
@@ -39,7 +39,7 @@
 已有完整包时可单独构建：
 
 ```powershell
-.\scripts\build-installer.ps1 -PackageDirectory '.\artifacts\releases\Qige-0.1.0-beta.14-win-x64' -Version '0.1.0-beta.14'
+.\scripts\build-installer.ps1 -PackageDirectory '.\artifacts\releases\Qige-1.0.0-win-x64' -Version '1.0.0'
 ```
 
 安装采用当前用户权限。新安装默认在安装包所在盘的 `Qige` 文件夹，已有安装优先沿用原路径；向导允许修改，并显示数据目录。开始菜单包含程序和数据文件夹入口，桌面快捷方式可选。
@@ -55,7 +55,7 @@
 - 启动项升级/卸载只处理与当前安装路径完全匹配的命令，保留用户手工修改的入口。
 - 卸载默认保留 `QigeData`，不删除用户自己放入目录的其他文件。
 - 正常流程先在应用中“退出并归还全部”，再卸载；正常归还保留分组配置，同名冲突需先处理。
-- 当前卸载器本身不执行文件归还。若应用被强杀或异常终止，未归还的快捷方式可能仍在 `QigeData/storage`；不能承诺卸载后自动回桌面。首个正式版需补充未归还内容检查和恢复引导，见[版本更新计划](release-plan.md#卸载与重新安装的当前行为)。
+- 卸载器发现未归还的托管内容或待处理恢复状态时会阻止卸载。重新启动原路径应用并完成归还后重试，详见 [版本更新计划](release-plan.md#卸载与重新安装的当前行为)。
 - 在同一用户、原安装路径重装且保留完整 `QigeData`，会继续读取分组与设置；启动后按分组重新收纳。改路径安装不会自动发现旧数据，也没有跨目录自动导入；不要合并两套数据。
 - 迁移软件应先退出归还，再移动完整程序和数据；避免合并不同安装的数据。
 

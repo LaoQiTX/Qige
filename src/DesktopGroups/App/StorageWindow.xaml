@@ -3,6 +3,7 @@
     <shell:WindowChrome CaptionHeight="52" ResizeBorderThickness="6" CornerRadius="12" GlassFrameThickness="0" />
   </shell:WindowChrome.WindowChrome>
   <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
     <Style TargetType="Button">
       <Setter Property="Foreground" Value="#475569" />
       <Setter Property="Background" Value="#F1F5F9" />
@@ -145,6 +146,38 @@
       <Setter Property="Foreground" Value="#64748B" />
       <Setter Property="Padding" Value="8,6" />
     </Style>
+    <Style x:Key="DrawerKindCard" TargetType="RadioButton">
+      <Setter Property="Background" Value="#F8FAFC" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="CardFrame" Background="{TemplateBinding Background}" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="11" Padding="14">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Ellipse x:Name="Ring" Width="14" Height="14" Stroke="#94A3B8" StrokeThickness="1.3" VerticalAlignment="Top" Margin="0,1,12,0" />
+                <Ellipse x:Name="Dot" Width="6" Height="6" Fill="#2563EB" VerticalAlignment="Top" Margin="0,5,12,0" Visibility="Hidden" />
+                <ContentPresenter Grid.Column="1" />
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardFrame" Property="Background" Value="#F1F5F9" /></Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="CardFrame" Property="Background" Value="#EFF6FF" />
+                <Setter TargetName="CardFrame" Property="BorderBrush" Value="#93B5F0" />
+                <Setter TargetName="Ring" Property="Stroke" Value="#2563EB" />
+                <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="CardFrame" Property="BorderBrush" Value="#2563EB" /></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="Segment" TargetType="RadioButton">
       <Setter Property="Foreground" Value="#64748B" />
       <Setter Property="Padding" Value="12,7" />
@@ -235,6 +268,7 @@
             <TextBlock Text="{Binding Detail}" Foreground="#94A3B8" FontSize="10" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
           </StackPanel>
           <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button Content="移除引用" Visibility="{Binding CanUnlink, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuietButton}" Click="RemoveReferenceClick" Padding="6,5" />
             <Button Content="打开" IsEnabled="{Binding CanOpen}" Style="{StaticResource QuietButton}" Click="OpenItemClick" Padding="6,5" />
             <Button Content="归还" IsEnabled="{Binding CanReturn}" Foreground="#2563EB" Background="Transparent" Padding="6,5" Click="ReturnItemClick" ToolTip="归还桌面并解除此项分组" />
             <Button Content="移除失效记录" Click="DismissMissingContentClick" Foreground="#9A3412" Background="Transparent" Padding="6,5" ToolTip="从抽屉移除失效成员，保留历史副本">
@@ -511,7 +545,7 @@
                                 </ItemsPanelTemplate>
                               </ItemsControl.ItemsPanel>
                             </ItemsControl>
-                            <TextBlock Text="把桌面快捷方式拖入此抽屉" Foreground="#94A3B8" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding EmptyVisibility}" />
+                            <TextBlock Text="暂无项目" Foreground="#94A3B8" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding EmptyVisibility}" />
                           </Grid>
                         </Border>
                         <Grid Grid.Row="2">
@@ -586,17 +620,6 @@
                     <StackPanel x:Name="StudioNoMatches" Visibility="Collapsed" Margin="8,8,8,20">
                       <TextBlock Text="没有找到匹配的抽屉或文件" Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" />
                     </StackPanel>
-                    <StackPanel Margin="8,5,8,0">
-                      <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="文件夹映射抽屉" FontWeight="SemiBold" FontSize="11" Foreground="#94A3B8" />
-                        <TextBlock Grid.Column="1" Text="0" FontFamily="Consolas" FontSize="10" Foreground="#94A3B8" />
-                      </Grid>
-                      <TextBlock Text="当前版本暂未支持" FontSize="10" Foreground="#94A3B8" Margin="0,0,0,8" />
-                    </StackPanel>
                   </StackPanel>
                 </ScrollViewer>
               </DockPanel>
@@ -608,21 +631,57 @@
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
               <StackPanel>
-                <TextBlock x:Name="StudioTitle" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="StudioSubtitle" Foreground="#94A3B8" FontSize="10" Margin="0,7,0,14" />
-                <WrapPanel x:Name="ContentActions" Margin="0,0,0,12">
-                  <Button Content="添加快捷方式…" Click="AddContentClick" Padding="10,6" Margin="0,0,6,0" />
-                  <Button Content="新建网址…" Click="NewWebsiteClick" Padding="10,6" Margin="0,0,6,0" />
-                  <Button Content="刷新" Click="RefreshContentClick" Style="{StaticResource QuietButton}" Padding="8,6" />
-                </WrapPanel>
+                <Grid Margin="0,0,0,14">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="StudioTitle" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                    <TextBlock x:Name="StudioSubtitle" Foreground="#64748B" FontSize="11" Margin="0,5,0,0" TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button x:Name="AddContentsMenuButton" Grid.Column="1" Click="AddContentsMenuClick" Margin="14,0,0,0"
+                          Padding="11,6" MinHeight="32" VerticalAlignment="Center" Style="{StaticResource PrimaryButton}"
+                          AutomationProperties.Name="添加内容" AutomationProperties.HelpText="打开收纳、引用和新建网址选项">
+                    <StackPanel Orientation="Horizontal">
+                      <Path Data="M 1,5 L 9,5 M 5,1 L 5,9" Stroke="White" StrokeThickness="1.3" VerticalAlignment="Center" Margin="0,0,7,0" />
+                      <TextBlock Text="添加内容" />
+                      <Path Data="M 1,1 L 4,4 L 7,1" Stroke="White" StrokeThickness="1.3" VerticalAlignment="Center" Margin="7,0,0,0" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <Grid x:Name="ContentActions" Margin="0,0,0,8">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Button x:Name="MappedOperationsButton" HorizontalAlignment="Left" MinHeight="30" Content="整理操作 ▾"
+                          Click="MappedOperationsClick" Padding="10,4" AutomationProperties.Name="整理操作" />
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                    <Button x:Name="SortContentButton" Content="排序 ▾" Click="SortContentClick" MinHeight="30" Padding="9,4"
+                            Style="{StaticResource QuietButton}" AutomationProperties.Name="排序" />
+                    <Button x:Name="RefreshContentButton" Content="刷新" Click="RefreshContentClick" MinHeight="30" Padding="9,4"
+                            Style="{StaticResource QuietButton}" />
+                  </StackPanel>
+                </Grid>
+                <Button x:Name="CancelTransferButton" Content="取消传输" Visibility="Collapsed" Click="CancelTransferClick" HorizontalAlignment="Left" Margin="0,0,6,6" Padding="10,7" />
+                <TextBlock x:Name="StudioExternalIssue" Visibility="Collapsed" TextWrapping="Wrap" Foreground="#9A3412" Margin="0,0,0,10" />
                 <Border Height="1" Background="#F1F5F9" />
               </StackPanel>
-              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
-                  <TextBlock x:Name="StudioEmptyLabel" Text="此抽屉暂无入口，或没有匹配的搜索结果。" TextWrapping="Wrap" Foreground="#94A3B8" Margin="0,30,0,0" />
-                  <ItemsControl x:Name="StudioContentsList" ItemTemplate="{StaticResource ContentRow}" />
-                </StackPanel>
-              </ScrollViewer>
+              <Grid Grid.Row="1">
+                <ListBox x:Name="StudioContentsList" ItemTemplate="{StaticResource ContentRow}" SelectionMode="Extended"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         VirtualizingPanel.ScrollUnit="Pixel" BorderThickness="0" Padding="0" Background="Transparent" MouseDoubleClick="StudioContentsDoubleClick">
+                  <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                      <Setter Property="Padding" Value="0" />
+                    </Style>
+                  </ListBox.ItemContainerStyle>
+                </ListBox>
+                <TextBlock x:Name="StudioEmptyLabel" Text="此抽屉暂无入口，或没有匹配的搜索结果。" IsHitTestVisible="False"
+                           TextWrapping="Wrap" Foreground="#94A3B8" Margin="0,30,0,0" />
+              </Grid>
             </Grid>
           </Grid>
         </Grid>
@@ -641,7 +700,7 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="当前所选抽屉" Foreground="#64748B" FontSize="11" />
                   <Border Grid.Column="1" Background="#F1F5F9" Padding="7,3" CornerRadius="4">
-                    <TextBlock Text="桌面整理" FontSize="10" Foreground="#64748B" />
+                    <TextBlock x:Name="SelectedDrawerKindLabel" Text="桌面整理" FontSize="10" Foreground="#64748B" />
                   </Border>
                 </Grid>
                 <TextBlock x:Name="SelectedTitle" FontSize="23" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -708,7 +767,8 @@
                 </Grid>
                 <WrapPanel Margin="0,6,0,8">
                   <Button x:Name="AddSelectedButton" Content="收纳桌面选中" Click="AddSelectedClick" Style="{StaticResource QuietButton}" FontSize="10" />
-                  <Button Content="打开收纳目录" Click="OpenFolderClick" Style="{StaticResource QuietButton}" FontSize="10" />
+                  <Button x:Name="OpenDrawerDirectoryButton" Content="打开抽屉目录" Click="OpenFolderClick" Style="{StaticResource QuietButton}" FontSize="10" />
+                  <Button x:Name="RelocateButton" Content="重定位映射目录…" Visibility="Collapsed" Click="RelocateMappingClick" Style="{StaticResource QuietButton}" FontSize="10" />
                 </WrapPanel>
                 <TextBlock Text="退出时归还已收纳的入口；遇到同名冲突会保留文件与恢复记录。" Foreground="#94A3B8" TextWrapping="Wrap" FontSize="10" LineHeight="17" />
               </StackPanel>
@@ -767,24 +827,36 @@
       <Border x:Name="CreateBox" Visibility="Collapsed" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="16" Width="490" Padding="26" HorizontalAlignment="Center" VerticalAlignment="Center">
           <StackPanel>
             <TextBlock Text="新建桌面抽屉" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,20" />
-            <Border BorderBrush="#0F1D38" BorderThickness="2" Background="#F8FAFC" CornerRadius="11" Padding="15" Margin="0,0,0,10">
+            <RadioButton x:Name="DesktopDrawerKindCard" GroupName="NewDrawerKind" Style="{StaticResource DrawerKindCard}" IsChecked="True"
+                         Checked="CreateKindChanged" Margin="0,0,0,8" AutomationProperties.Name="桌面整理抽屉">
               <StackPanel>
-                <TextBlock Text="●  桌面整理抽屉" FontWeight="SemiBold" />
-                <TextBlock Text="收纳桌面快捷方式，归还时保留分组与位置记忆。" Foreground="#64748B" TextWrapping="Wrap" FontSize="11" Margin="17,8,0,0" />
+                <TextBlock Text="桌面整理抽屉" FontWeight="SemiBold" />
+                <TextBlock Text="收纳桌面文件与快捷方式，或引用其他位置的项目。" Foreground="#64748B" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0" />
               </StackPanel>
-            </Border>
-            <Border BorderBrush="#E2E8F0" BorderThickness="1" Background="#F8FAFC" CornerRadius="11" Padding="16" Margin="0,0,0,20">
+            </RadioButton>
+            <RadioButton x:Name="MappingDrawerKindCard" GroupName="NewDrawerKind" Style="{StaticResource DrawerKindCard}"
+                         Checked="CreateKindChanged" Margin="0,0,0,18" AutomationProperties.Name="文件夹映射抽屉">
               <StackPanel>
-                <TextBlock Text="○  文件夹映射抽屉 · 即将支持" Foreground="#94A3B8" FontWeight="SemiBold" />
-                <TextBlock Text="直接查看本地文件夹。当前版本尚未提供此类型。" Foreground="#94A3B8" TextWrapping="Wrap" FontSize="11" Margin="17,8,0,0" />
+                <TextBlock Text="文件夹映射抽屉" FontWeight="SemiBold" />
+                <TextBlock Text="直接管理本地文件夹。移除抽屉后保留目录和文件。" Foreground="#64748B" TextWrapping="Wrap" FontSize="11" Margin="0,6,0,0" />
               </StackPanel>
-            </Border>
-            <TextBlock Text="抽屉名称" Margin="0,0,0,7" />
-            <TextBox x:Name="NewNameBox" MaxLength="40" KeyDown="NewNameKeyDown" AutomationProperties.Name="新抽屉名称" />
+            </RadioButton>
+            <TextBlock x:Name="NewNameLabel" Text="抽屉名称" Margin="0,0,0,7" />
+            <TextBox x:Name="NewNameBox" MaxLength="40" AutomationProperties.Name="新抽屉名称" />
+            <StackPanel x:Name="NewMappingFields" Visibility="Collapsed" Margin="0,12,0,0">
+              <TextBlock Text="映射目录" Margin="0,0,0,7" />
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <TextBox x:Name="NewMappingPathBox" IsReadOnly="True" IsTabStop="False" AutomationProperties.Name="所选映射目录"
+                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Padding="8,6" />
+                <Button x:Name="ChooseMappingButton" Grid.Column="1" Content="选择目录…" Click="ChooseMappingClick" Padding="10,6" Margin="7,0,0,0" />
+              </Grid>
+              <TextBlock Text="可以在目录选择窗口中新建文件夹。" FontSize="11" Foreground="#64748B" Margin="0,6,0,0" />
+            </StackPanel>
             <TextBlock x:Name="CreateErrorLabel" TextWrapping="Wrap" Foreground="#A33F3F" Visibility="Collapsed" Margin="0,8,0,0" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
               <Button Content="取消" Click="CancelCreateClick" Style="{StaticResource QuietButton}" Margin="0,0,8,0" />
-              <Button Content="创建并在桌面放置" Click="CreateClick" Style="{StaticResource PrimaryButton}" />
+              <Button x:Name="ConfirmCreateButton" Content="创建整理抽屉" IsDefault="True" Click="CreateClick" Style="{StaticResource PrimaryButton}" />
             </StackPanel>
           </StackPanel>
         </Border>
@@ -838,7 +910,7 @@
                     <Border Style="{StaticResource Card}">
                       <StackPanel>
                         <TextBlock Text="备份与恢复" FontWeight="SemiBold" Margin="0,0,0,14" />
-                        <CheckBox x:Name="AutoBackupBox" Content="自动备份配置与托管快捷方式" Margin="0,0,0,12" />
+                        <CheckBox x:Name="AutoBackupBox" Content="自动备份配置与托管内容" Margin="0,0,0,12" />
                         <TextBlock Text="备份目录" FontSize="11" Foreground="#64748B" Margin="0,0,0,6" />
                         <DockPanel Margin="0,0,0,12">
                           <Button DockPanel.Dock="Right" Content="选择…" Click="ChooseBackupDirectoryClick" Margin="8,0,0,0" />
@@ -856,6 +928,7 @@
                           <Button x:Name="BackupNowButton" Content="立即备份" Click="BackupNowClick" Margin="0,0,8,8" />
                           <Button Content="打开备份目录" Click="OpenBackupFolderClick" Margin="0,0,8,8" />
                         </WrapPanel>
+                                                <TextBlock Text="备份含托管文件和文件夹。外部目录与引用仅保存路径。每份备份最多 20,000 项及 512 MB。" Foreground="#64748B" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,4" />
                         <TextBlock x:Name="BackupStatusLabel" Foreground="#64748B" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="0,4,0,12" AutomationProperties.LiveSetting="Polite" />
                         <TextBlock Text="选择当前数据目录的备份以恢复" FontSize="11" Foreground="#64748B" Margin="0,0,0,6" />
                         <ComboBox x:Name="BackupList" DisplayMemberPath="Label" MinHeight="32" AutomationProperties.Name="可恢复备份" />
@@ -871,6 +944,7 @@
                     <TextBlock Text="运行与恢复" FontSize="17" FontWeight="SemiBold" />
                     <TextBlock x:Name="HealthSummary" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,0" />
                     <TextBlock x:Name="HealthEnvironment" Foreground="#64748B" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="0,8,0,14" />
+                    <TextBlock x:Name="TransferRecoveryLabel" Visibility="Collapsed" Foreground="#9A3412" TextWrapping="Wrap" Margin="0,4,0,10" />
                     <TextBlock Text="以下操作作用于全部抽屉" Foreground="#94A3B8" FontSize="10" Margin="0,0,0,8" />
                     <WrapPanel Margin="0,0,0,14">
                       <Button Content="重新连接桌面" Click="RetryDesktopClick" Margin="0,0,8,8" Padding="10,7" />

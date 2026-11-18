@@ -98,6 +98,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal bool IsExpanded => !folded || hoveringOpen;
     internal int HoveredIndex => hovered;
     internal int SelectedIndex => selected;
+    internal int ItemCount => items.Count;
     internal bool IsAnimating => animationTimer.IsEnabled;
     internal int AnimationFrames { get; private set; }
     internal bool IsAttached => Handle != 0 && IsWindow(Handle) && IsWindow(host) && NativeDesktop.GetParent(Handle) == host;
@@ -106,6 +107,10 @@ internal sealed class ShortcutPanel : IDisposable
     public event Action<bool>? FoldedChanged;
     internal IPanelDropTarget DropTarget => dropTarget ?? throw new InvalidOperationException("拖放尚未注册。");
     public event Action? Disposed;
+    internal Func<string, NativeDesktop.Point, bool>? DropOnAnotherPanel { get; set; }
+    internal Func<IReadOnlyList<string>, uint, uint, uint>? MappedDropEffect { get; set; }
+    internal Func<IReadOnlyList<string>, uint, bool>? MappedDrop { get; set; }
+    internal bool IsAtPoint(NativeDesktop.Point point) => IsAttached && WindowFromPoint(point) == Handle;
 
     public ShortcutPanel(Action<string> report, Action<int, int> moved, Func<IReadOnlyList<string>, bool> dropped,
         Func<IReadOnlyList<string>, bool>? canAccept = null, Action<string>? returnToDesktop = null, Func<nint>? findHost = null)
@@ -174,7 +179,8 @@ internal sealed class ShortcutPanel : IDisposable
             Render();
             DesktopAttachment.Place(Handle, X, SurfaceY, Width, Height);
             if (!oleInitialized) { Marshal.ThrowExceptionForHR(OleInitialize(0)); oleInitialized = true; }
-            dropTarget = new PanelDropTarget(paths => !InteractionBlocked && this.canAccept(paths), paths => !InteractionBlocked && this.dropped(paths), SetFileDrag, report);
+            dropTarget = new PanelDropTarget(paths => !InteractionBlocked && this.canAccept(paths),                 paths => !InteractionBlocked && this.dropped(paths), SetFileDrag, report, MappedDropEffect,
+                MappedDrop is { } mapped ? (paths, effect) => !InteractionBlocked && mapped(paths, effect) : null);
             Marshal.ThrowExceptionForHR(RegisterDragDrop(Handle, dropTarget));
             dropRegistered = true;
             AttachmentCount++;
@@ -308,9 +314,7 @@ internal sealed class ShortcutPanel : IDisposable
             var height = logicalHeight;
             drawing.DrawRoundedRectangle(AppPalette.Translucent(225, AppPalette.Sidebar), new Pen(AppPalette.Translucent(40, AppPalette.Text), 1), new Rect(.5, .5, logicalWidth - 1, height - 1), 12, 12);
             var titleY = expandsUpward ? height - 46 : 0;
-            Text(drawing, title, 19, titleY + 12, 15, AppPalette.Text.Color, Math.Max(60, logicalWidth - 150), 24, FontWeights.SemiBold);
-            var countX = Math.Min(logicalWidth - 124, 24 + title.Length * 15);
-            Text(drawing, items.Count == 0 ? "" : items.Count.ToString(), countX, titleY + 15, 11, AppPalette.Muted.Color, 42, 20);
+            Text(drawing, title, 19, titleY + 12, 15, AppPalette.Text.Color, Math.Max(60, logicalWidth - 101), 24, FontWeights.SemiBold);
             Text(drawing, "···", logicalWidth - 74, titleY + 9, 18, AppPalette.Secondary.Color, 28, 25);
             Text(drawing, IsExpanded ? "−" : "+", logicalWidth - 36, titleY + 10, 19, AppPalette.Secondary.Color, 20, 25);
             drawing.DrawLine(new Pen(AppPalette.Translucent(20, AppPalette.Text), 1), new Point(16, expandsUpward ? titleY : 45), new Point(logicalWidth - 16, expandsUpward ? titleY : 45));
@@ -715,7 +719,8 @@ internal sealed class ShortcutPanel : IDisposable
         CancelIconGesture(); // Remove the ghost before checking the target window.
         if (didDrag && path != null)
         {
-            if (IsDesktopAt(point)) returnToDesktop?.Invoke(path);
+            if (DropOnAnotherPanel?.Invoke(path, point) == true) { }
+            else if (IsDesktopAt(point)) returnToDesktop?.Invoke(path);
             else report("已取消拖出：请拖到桌面空白处松开。");
         }
         UpdateHoverAfterMove();

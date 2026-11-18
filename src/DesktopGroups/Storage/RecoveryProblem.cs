@@ -21,7 +21,7 @@ internal static class RecoveryInspection
             var path = store.StoredPath(entry);
             try
             {
-                var original = File.Exists(entry.OriginalPath); var stored = File.Exists(path);
+                var original = ShortcutStore.Exists(entry, entry.OriginalPath); var stored = ShortcutStore.Exists(entry, path);
                 if (!original && !stored)
                 {
                     canDismiss = store.IsMissing(entry);
@@ -32,10 +32,10 @@ internal static class RecoveryInspection
                 else if (entry.PendingRelative != null || entry.Phase is "Collecting" or "Restoring" or "Updating")
                     message = "上次文件操作尚未完成，需要检查并继续恢复。";
                 else if (original && stored)
-                    message = ShortcutInfo.Read(entry.OriginalPath).Key == entry.Key
+                    message = !entry.IsOrdinaryFile && ShortcutInfo.Read(entry.OriginalPath).Key == entry.Key
                         ? "原桌面又出现了同一入口，可重试检查并同步。"
-                        : "原桌面存在不同目标的同名文件。两份都已保留，请先检查并改名其中一份。";
-                else if (stored && ShortcutInfo.Read(path).Key != entry.Key)
+                        : "原桌面存在同名文件。两份都已保留，请先检查并改名其中一份。";
+                else if (stored && !entry.IsOrdinaryFile && ShortcutInfo.Read(path).Key != entry.Key)
                     message = "收纳入口目标已改变，请检查后归还。";
                 else if (original && entry.Phase != "Restored") message = "文件在桌面，收纳记录需要恢复确认。";
             }

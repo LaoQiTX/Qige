@@ -15,10 +15,15 @@ internal static class Program
             // The installer checks this lifetime marker; data locks still control single-instance access.
             using var installerGuard = new Mutex(false, @"Local\Qige.Application");
             var storage = AppStorage.FromArguments(args);
+            if (args.Contains("--verify-safe-uninstall")) return UninstallSafety.Verify(storage);
             storage.EnsureWritable();
             using var sessionLock = AcquireSession(storage, args);
             if (sessionLock == null) return 0;
-            if (!args.Contains("--demo")) BackupService.RecoverInterrupted(storage);
+            if (!args.Contains("--demo"))
+            {
+                BackupService.RecoverInterrupted(storage);
+                MappedFileOperations.RecoverInterrupted(storage);
+            }
             LegacyDataMigration.Run(storage);
             storage.ConfigureTemporaryDirectory();
             var application = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };

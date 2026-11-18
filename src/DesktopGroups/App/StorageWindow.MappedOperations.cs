@@ -1,0 +1,403 @@
+using System.Collections.Specialized;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+
+namespace DesktopGroups;
+
+internal sealed partial class StorageWindow
+{
+    private CancellationTokenSource? activeMappedTransfer;
+
+    private string[] SelectedMappedItems() => StudioContentsList.SelectedItems.Cast<ManagerContent>()
+        .Where(item => item.Kind == DrawerContentKind.Mapped && item.CanOpen).Select(item => item.Path).ToArray();
+
+    private void StudioContentsDoubleClick(object sender, MouseButtonEventArgs e) => Try(() =>
+    {
+        if (e.OriginalSource is FrameworkElement { DataContext: ManagerContent { CanOpen: true } item })
+        {
+            DrawerContentSource.AssertUsable(item.Path);
+            Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
+        }
+    });
+
+    private static void SetFileClipboard(string[] paths, bool cut)
+    {
+        if (paths.Length == 0) return;
+        foreach (var path in paths) DrawerContentSource.AssertUsable(path);
+        var collection = new StringCollection();
+        collection.AddRange(paths);
+        var data = new DataObject();
+        data.SetFileDropList(collection);
+        data.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes(cut ? 2u : 1u)));
+        Clipboard.SetDataObject(data, true);
+    }
+
+    private void CopyMappedSelection(bool cut)
+    {
+        var paths = SelectedMappedItems();
+        SetFileClipboard(paths, cut);
+        if (paths.Length > 0) Status($"已{(cut ? "剪切" : "复制")} {paths.Length} 项。");
+    }
+
+    private void PasteIntoMapping(DrawerRuntime runtime)
+    {
+        if (demo || runtime.Busy || !Clipboard.ContainsFileDropList()) return;
+        var paths = Clipboard.GetFileDropList().Cast<string>().ToArray();
+        var move = Clipboard.GetData("Preferred DropEffect") is MemoryStream effect && effect.Length >= 4
+            && BitConverter.ToUInt32(effect.ToArray()) == 2;
+        _ = TransferIntoMappingAsync(runtime, paths, _ => move);
+    }
+
+    private bool CanTransferIntoMapping(DrawerRuntime runtime, IReadOnlyList<string> paths) =>
+        paths.Count > 0 && runtime.Definition.MappedPath != null && !demo && !closing && !maintenanceBusy &&
+        !exitAfterOperations && !runtime.Busy && !runtime.Definition.Removing && activeMappedTransfer == null;
+
+    private static uint PickMappedDropEffect(DrawerRuntime runtime, IReadOnlyList<string> paths, uint keys, uint allowed)
+    {
+        if ((allowed & 1) == 0) return 0; // A queued transfer must be safe to acknowledge as COPY.
+        if ((keys & 8) != 0) return 1; // Ctrl
+        if ((keys & 4) != 0) return allowed & 2; // Shift
+        return (allowed & 2) != 0 && paths.All(path => MappedFileOperations.SameDrive(path, runtime.Definition.MappedPath!)) ? 2u : 1u;
+    }
+
+    private bool DropBetweenDrawers(DrawerRuntime source, string path, NativeDesktop.Point point)
+    {
+        var target = runtimes.Values.FirstOrDefault(runtime => runtime != source && runtime.Panel.IsAtPoint(point));
+        if (target == null) return false;
+        Try(() =>
+        {
+            if (demo || closing || maintenanceBusy || exitAfterOperations || source.Busy || target.Busy || source.Definition.Removing || target.Definition.Removing)
+                throw new IOException("请等待抽屉文件操作结束后重试。");
+            var external = source.ExternalItems.FirstOrDefault(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (target.Definition.MappedPath is { } directory)
+            {
+                var hasControl = (GetAsyncKeyState(0x11) & 0x8000) != 0;
+                var hasShift = (GetAsyncKeyState(0x10) & 0x8000) != 0;
+                if (external == null)
+                {
+                    // The source is owned by the app. A managed-file move must detach membership before changing its original path.
+                    _ = MoveManagedBetweenDrawersAsync(source, target, path, hasControl, hasShift);
+                    return;
+                }
+                var move = !hasControl && (hasShift || external.Kind == DrawerContentKind.Mapped && MappedFileOperations.SameDrive(path, directory));
+                _ = TransferIntoMappingAsync(target, [path], _ => move);
+                return;
+            }
+            if (external == null) _ = MoveManagedBetweenDrawersAsync(source, target, path, false, false);
+            else
+            {
+                if (external.Kind == DrawerContentKind.Reference && (GetAsyncKeyState(0x11) & 0x8000) == 0)
+                    catalog.MoveReference(source.Definition.Id, target.Definition.Id, external.Id);
+                else catalog.AddReferences(target.Definition.Id, [path]);
+                InvalidateExternalContents(source);
+                InvalidateExternalContents(target);
+                Status("抽屉引用已更新，原件仍在原位置。");
+            }
+        });
+        return true;
+    }
+
+    private async Task MoveManagedBetweenDrawersAsync(DrawerRuntime source, DrawerRuntime target, string path, bool copy, bool forceMove)
+    {
+        var entry = source.Row.Store.Active.FirstOrDefault(item => source.Row.Store.StoredPath(item).Equals(path, StringComparison.OrdinalIgnoreCase));
+        if (entry == null) return;
+        if (target.Definition.MappedPath is { } directory && !forceMove && !MappedFileOperations.SameDrive(entry.OriginalPath, directory)) copy = true;
+        source.Busy = target.Busy = true;
+        RefreshHealthText();
+        try
+        {
+            var destination = target.Definition.MappedPath;
+            var result = await fileWorker.Run(() =>
+            {
+                var originalStore = source.Row.Store.Detached();
+                var targetStore = target.Row.Store.Detached();
+                string? issue = null;
+                try
+                {
+                    if (destination != null && copy) new MappedFileOperations(storage).Transfer(path, destination, false, default, allowManagedCopy: true);
+                    else
+                    {
+                        originalStore.ReturnAndUngroup(path);
+                        if (destination != null) new MappedFileOperations(storage).Transfer(entry.OriginalPath, destination, true, default);
+                        else targetStore.Add(entry.OriginalPath);
+                    }
+                }
+                catch (Exception error) { issue = error.Message; }
+                return (originalStore.Profile, Target: targetStore.Profile, issue);
+            });
+            if (disposed) return;
+            source.Row.Store.Publish(result.Profile);
+            if (target.Definition.Kind == DrawerKind.Desktop) target.Row.Store.Publish(result.Target);
+            Status(result.issue == null ? copy ? "已复制到映射目录。" : "跨抽屉移动完成。" : "跨抽屉操作中止，已保留可用副本。" + result.issue);
+        }
+        catch (Exception error) { Status(error.Message); }
+        finally
+        {
+            source.Busy = target.Busy = false;
+            if (!disposed)
+            {
+                RefreshHealthText();
+                InvalidateExternalContents(target);
+                if (exitAfterOperations && BusyOperations == 0 && !restoringExit) { exitAfterOperations = false; RequestExit(); }
+                _ = ScanRecoveryAsync();
+            }
+        }
+    }
+
+    private async Task TransferIntoMappingAsync(DrawerRuntime runtime, IReadOnlyList<string> paths, Func<string, bool> chooseMove)
+    {
+        if (!CanTransferIntoMapping(runtime, paths)) return;
+        var directory = runtime.Definition.MappedPath!;
+        var copySources = runtimes.Values.Where(drawer => drawer.Definition.Kind == DrawerKind.Desktop && !drawer.Busy)
+            .SelectMany(drawer => drawer.Row.Store.Active.Select(drawer.Row.Store.StoredPath))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var operations = paths.Distinct(StringComparer.OrdinalIgnoreCase).Select(path => (Path: path, Move: chooseMove(path))).ToArray();
+        var desktopEntries = catalog.Stores.Values.SelectMany(store => store.Profile.Entries).Select(entry => entry.OriginalPath).ToArray();
+        using var cancellation = new CancellationTokenSource();
+        activeMappedTransfer = cancellation;
+        CancelTransferButton.Visibility = Visibility.Visible;
+        try
+        {
+            await RunMappedOperationAsync(runtime, "传输", () =>
+            {
+                var files = new MappedFileOperations(storage);
+                var issues = new List<string>();
+                var completed = 0;
+                foreach (var operation in operations)
+                {
+                    if (cancellation.IsCancellationRequested) break;
+                    Status($"正在{(operation.Move ? "移动" : "复制")} {completed + issues.Count + 1}/{operations.Length} · {Path.GetFileName(operation.Path)}");
+                    try
+                    {
+                        var destination = Path.Combine(directory, Path.GetFileName(Path.TrimEndingDirectorySeparator(operation.Path)));
+                        if (desktopEntries.Contains(destination, StringComparer.OrdinalIgnoreCase) ||
+                            operation.Move && desktopEntries.Any(owned => MappedFileOperations.IsAtOrInside(owned, Path.GetFullPath(operation.Path))))
+                            throw new IOException("此项目包含已分组的桌面文件，请先解除原分组。");
+                        files.Transfer(operation.Path, directory, operation.Move, cancellation.Token, allowManagedCopy: copySources.Contains(operation.Path));
+                        completed++;
+                    }
+                    catch (OperationCanceledException) { break; }
+                    catch (Exception error) { issues.Add($"{Path.GetFileName(operation.Path)}：{error.Message}"); }
+                }
+                return $"已完成 {completed}/{operations.Length} 项" + (cancellation.IsCancellationRequested ? "，传输已取消" : "")
+                    + (issues.Count > 0 ? "。" + string.Join("；", issues) : "。");
+            });
+        }
+        finally { activeMappedTransfer = null; CancelTransferButton.Visibility = Visibility.Collapsed; }
+    }
+
+    private async Task RunMappedOperationAsync(DrawerRuntime runtime, string label, Func<string> operation)
+    {
+        if (demo || closing || maintenanceBusy || exitAfterOperations || runtime.Busy || runtime.Definition.Removing || runtime.Definition.MappedPath == null) return;
+        runtime.Busy = true;
+        RefreshHealthText();
+        try { Status(await fileWorker.Run(operation)); }
+        catch (Exception error) { Status($"{label}失败：{error.Message}"); }
+        finally
+        {
+            runtime.Busy = false;
+            RefreshHealthText();
+            InvalidateExternalContents(runtime);
+            _ = ScanRecoveryAsync();
+            if (exitAfterOperations && BusyOperations == 0 && !restoringExit && !disposed) { exitAfterOperations = false; RequestExit(); }
+        }
+    }
+
+    private void CancelTransferClick(object sender, RoutedEventArgs e) => activeMappedTransfer?.Cancel();
+
+    private void MappedOperationsClick(object sender, RoutedEventArgs e) => Try(() =>
+    {
+        if (sender is not Button button || SelectedRuntime is not { } runtime) return;
+        var menu = new ContextMenu { PlacementTarget = button };
+        var paths = SelectedMappedItems();
+        void Add(string title, Action command, bool enabled = true)
+        {
+            var item = new MenuItem { Header = title, IsEnabled = enabled };
+            item.Click += (_, _) => Try(command);
+            menu.Items.Add(item);
+        }
+        if (runtime.Definition.Kind == DrawerKind.Desktop)
+        {
+            var items = StudioContentsList.SelectedItems.Cast<ManagerContent>().ToArray();
+            var managed = items.Where(item => item.Kind == DrawerContentKind.Managed && item.CanReturn).ToArray();
+            var references = items.Where(item => item.Kind == DrawerContentKind.Reference).ToArray();
+            Add("复制选中项", () => SetFileClipboard(items.Where(item => item.CanOpen).Select(item => item.Path).ToArray(), false), items.Any(item => item.CanOpen));
+            Add("归还并剪切…", () => _ = ReturnManagedSelectionAsync(runtime, managed, cut: true), managed.Length > 0);
+            Add("归还并解除分组", () => _ = ReturnManagedSelectionAsync(runtime, managed), managed.Length > 0);
+            Add("删除实际文件到回收站…", () => RecycleManaged(runtime, managed), managed.Length > 0);
+            Add("重命名…", () => RenameManaged(runtime, managed[0]), managed.Length == 1);
+            Add("移除引用", () => { foreach (var reference in references) RemoveReference(runtime, reference.Id); }, references.Length > 0);
+            Add("重定位引用…", () => RelocateReference(runtime, references[0]), references.Length == 1);
+            Add("粘贴文件", () => PasteIntoOrganizer(runtime));
+            Add("新建文件夹…", () => CreateManaged(runtime, folder: true));
+            Add("新建文本文档…", () => CreateManaged(runtime, folder: false));
+        }
+        else
+        {
+            Add("复制选中项", () => SetFileClipboard(paths, false), paths.Length > 0);
+            Add("剪切选中项", () => SetFileClipboard(paths, true), paths.Length > 0);
+            Add("粘贴文件", () => PasteIntoMapping(runtime));
+            Add("重命名…", () => RenameMapped(runtime, paths), paths.Length == 1);
+            Add("移到回收站…", () => RecycleMapped(runtime, paths), paths.Length > 0);
+            Add("新建文件夹…", () => CreateMapped(runtime, true));
+            Add("新建文本文档…", () => CreateMapped(runtime, false));
+        }
+        menu.IsOpen = true;
+    });
+
+    private async Task ReturnManagedSelectionAsync(DrawerRuntime runtime, ManagerContent[] items, bool cut = false, bool recycle = false)
+    {
+        if (demo || items.Length == 0) return;
+        var returned = new List<string>();
+        await RunStoreAsync(runtime, recycle ? "回收" : "归还并解除分组", store =>
+        {
+            var issues = new List<string>();
+            foreach (var item in items)
+            {
+                try
+                {
+                    store.ReturnAndUngroup(item.Path);
+                    if (recycle) RecycleBin.Send(item.OriginalPath);
+                    else returned.Add(item.OriginalPath);
+                }
+                catch (Exception error) { issues.Add($"{item.Name}：{error.Message}"); }
+            }
+            return issues;
+        });
+        if (cut && returned.Count > 0) Try(() => SetFileClipboard(returned.ToArray(), true));
+    }
+
+    private void RecycleManaged(DrawerRuntime runtime, ManagerContent[] items)
+    {
+        if (items.Length == 0 || demo || !ConfirmRecycle(items.Length)) return;
+        _ = ReturnManagedSelectionAsync(runtime, items, recycle: true);
+    }
+
+    private void RenameManaged(DrawerRuntime runtime, ManagerContent item)
+    {
+        if (demo || runtime.Busy) return;
+        var name = AskFileName("重命名", Path.GetFileName(item.OriginalPath));
+        if (name == null) return;
+        var target = MappedFileOperations.PathForNewItem(runtime.Row.Store.DesktopPath, name);
+        if (target.Equals(item.OriginalPath, StringComparison.OrdinalIgnoreCase)) return;
+        catalog.EnsureOwnership(runtime.Definition.Id, [target]);
+        if (IncludesManagedOriginal(target) || File.Exists(target) || Directory.Exists(target)) throw new IOException("已有同名项目。");
+        _ = RunStoreAsync(runtime, "重命名托管项目", store =>
+        {
+            store.ReturnAndUngroup(item.Path);
+            MappedFileOperations.Rename(item.OriginalPath, name);
+            store.Add(target);
+            return [];
+        });
+    }
+
+    private void CreateManaged(DrawerRuntime runtime, bool folder)
+    {
+        if (demo || runtime.Busy) return;
+        var desktop = runtime.Row.Store.DesktopPath;
+
+        var name = AskFileName(folder ? "新建托管文件夹" : "新建托管文档", folder ? "新建文件夹" : "新建文本文档.txt");
+        if (name == null) return;
+        if (!folder && !name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) name += ".txt";
+        var target = MappedFileOperations.PathForNewItem(desktop, name);
+        if (IncludesManagedOriginal(target)) throw new IOException("名称与桌面收纳记录重叠。");
+        _ = RunStoreAsync(runtime, "新建托管项目", store =>
+        {
+            MappedFileOperations.Create(desktop, name, folder);
+            store.Add(target);
+            return [];
+        });
+    }
+
+    private void PasteIntoOrganizer(DrawerRuntime runtime)
+    {
+        if (runtime.Busy || closing || maintenanceBusy || exitAfterOperations || runtime.Definition.Removing || !Clipboard.ContainsFileDropList()) return;
+        var paths = Clipboard.GetFileDropList().Cast<string>().ToArray();
+        if (paths.Length == 0) return;
+        if (runtime.Row.Store.CanAccept(paths))
+        {
+            if (!QueueAddPaths(runtime.Definition.Id, paths)) Status("暂时无法收纳剪贴板中的桌面项目。");
+            return;
+        }
+        if (demo) return;
+        catalog.AddReferences(runtime.Definition.Id, paths);
+        InvalidateExternalContents(runtime);
+        Status("已粘贴为引用，文件保留在原位置。");
+    }
+
+    private void RecycleMapped(DrawerRuntime runtime, string[] paths)
+    {
+        if (demo || paths.Length == 0 || runtime.Busy || runtime.Definition.MappedPath is not { } directory) return;
+        if (paths.Any(path => !string.Equals(Path.GetDirectoryName(path), directory, StringComparison.OrdinalIgnoreCase) ||
+            IncludesManagedOriginal(path) || MappedFileOperations.IsAtOrInside(storage.Root, path) || MappedFileOperations.IsAtOrInside(path, storage.Root)))
+            throw new IOException("项目与栖格数据或桌面收纳记录重叠，请先解除分组。");
+        if (!ConfirmRecycle(paths.Length)) return;
+        _ = RunMappedOperationAsync(runtime, "回收", () =>
+        {
+            var issues = new List<string>();
+            foreach (var path in paths)
+            {
+                try { RecycleBin.Send(path); }
+                catch (Exception error) { issues.Add($"{Path.GetFileName(path)}：{error.Message}"); }
+            }
+            return $"已回收 {paths.Length - issues.Count}/{paths.Length} 项。" + string.Join("；", issues);
+        });
+    }
+
+    private bool ConfirmRecycle(int count)
+    {
+        ShowControl();
+        return MessageBox.Show(this, $"将 {count} 项实际文件或文件夹移到 Windows 回收站？", "移到回收站",
+            MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK;
+    }
+
+    private bool IncludesManagedOriginal(string path) => catalog.Stores.Values.SelectMany(store => store.Profile.Entries)
+        .Any(entry => MappedFileOperations.IsAtOrInside(entry.OriginalPath, path));
+
+    private void RenameMapped(DrawerRuntime runtime, string[] paths)
+    {
+        if (paths.Length != 1 || runtime.Busy || runtime.Definition.MappedPath == null) return;
+        if (!string.Equals(Path.GetDirectoryName(paths[0]), runtime.Definition.MappedPath, StringComparison.OrdinalIgnoreCase)) return;
+        var name = AskFileName("重命名", Path.GetFileName(paths[0]));
+        if (name == null) return;
+        var destination = MappedFileOperations.PathForNewItem(runtime.Definition.MappedPath, name);
+        if (MappedFileOperations.IsAtOrInside(storage.Root, paths[0]) || IncludesManagedOriginal(paths[0]) || IncludesManagedOriginal(destination))
+            throw new IOException("项目与桌面收纳记录重叠，请先解除分组。");
+        _ = RunMappedOperationAsync(runtime, "重命名", () => { MappedFileOperations.Rename(paths[0], name); return $"已重命名为 {name}。"; });
+    }
+
+    private void CreateMapped(DrawerRuntime runtime, bool folder)
+    {
+        if (runtime.Busy || runtime.Definition.MappedPath is not { } directory) return;
+        var name = AskFileName(folder ? "新建文件夹" : "新建文本文档", folder ? "新建文件夹" : "新建文本文档.txt");
+        if (name == null) return;
+        if (!folder && !name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) name += ".txt";
+        var destination = MappedFileOperations.PathForNewItem(directory, name);
+        if (MappedFileOperations.IsAtOrInside(storage.Root, destination) || IncludesManagedOriginal(destination))
+            throw new IOException("名称与栖格数据或桌面收纳记录重叠。");
+        _ = RunMappedOperationAsync(runtime, "新建", () => { MappedFileOperations.Create(directory, name, folder); return $"已创建 {name}。"; });
+    }
+
+    private string? AskFileName(string title, string initial)
+    {
+        ShowControl();
+        var input = new TextBox { Text = initial, MinWidth = 300, Margin = new Thickness(0, 0, 0, 12), Padding = new Thickness(6) };
+        var dialog = new Window { Title = title, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, ShowInTaskbar = false };
+        var controls = new StackPanel { Margin = new Thickness(16) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var confirm = new Button { Content = "确定", IsDefault = true, MinWidth = 72, Margin = new Thickness(0, 0, 8, 0) };
+        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 72 };
+        confirm.Click += (_, _) => dialog.DialogResult = true;
+        buttons.Children.Add(confirm);
+        buttons.Children.Add(cancel);
+        controls.Children.Add(input);
+        controls.Children.Add(buttons);
+        dialog.Content = controls;
+        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
+        return dialog.ShowDialog() == true ? input.Text : null;
+    }
+}

@@ -148,19 +148,36 @@ internal sealed partial class StorageWindow : Window
         var row = new DrawerRow(definition, store);
         DrawerRuntime? runtime = null;
         var panel = new ShortcutPanel(Status, (_, _) => { if (runtime != null) SaveLayout(runtime); },
-            paths => !demo && QueueAddPaths(definition.Id, paths),
+            paths => definition.Kind == DrawerKind.Desktop && !demo && QueueAddPaths(definition.Id, paths),
             paths =>
             {
-                if (closing || maintenanceBusy || demo || definition.Removing || runtime?.Busy == true) return false;
+                if (closing || maintenanceBusy || demo || definition.Removing || runtime?.Busy != false) return false;
+                if (definition.Kind == DrawerKind.FolderMapping) return CanTransferIntoMapping(runtime, paths);
                 try { catalog.EnsureOwnership(definition.Id, paths); return store.CanAccept(paths); }
                 catch (Exception exception) when (exception is IOException or ArgumentException) { return false; }
             },
             path =>
             {
                 if (demo) { Status("样例内容仅在样例目录内使用。"); return; }
+                if (runtime?.ExternalItems.Any(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase)) == true)
+                {
+                    Status("请通过内容菜单操作映射项目或移除引用。");
+                    return;
+                }
                 if (runtime != null) _ = RunStoreAsync(runtime, "归还桌面并解除分组", copy => { copy.ReturnAndUngroup(path); return []; });
             });
         runtime = new DrawerRuntime(definition, row, panel);
+        panel.DropOnAnotherPanel = (path, point) => DropBetweenDrawers(runtime, path, point);
+        if (definition.Kind == DrawerKind.FolderMapping)
+        {
+            panel.MappedDropEffect = (paths, keys, allowed) => PickMappedDropEffect(runtime, paths, keys, allowed);
+            panel.MappedDrop = (paths, effect) =>
+            {
+                if (!CanTransferIntoMapping(runtime, paths)) return false;
+                _ = TransferIntoMappingAsync(runtime, paths, _ => effect == 2);
+                return true;
+            };
+        }
         panel.Configure(definition.Name, store.Profile.Width, store.Profile.Height, store.Profile.Locked);
         panel.RestorePreferences(store.Profile);
         panel.FoldedChanged += folded =>
@@ -184,6 +201,7 @@ internal sealed partial class StorageWindow : Window
         store.Changed += () => RefreshItems(runtime);
         rows.Add(row); runtimes.Add(definition.Id, runtime);
         RefreshItems(runtime);
+        InvalidateExternalContents(runtime);
     }
 
     private LayoutRect Transform(DrawerRuntime runtime, LayoutRect rect, int edges)
@@ -224,10 +242,11 @@ internal sealed partial class StorageWindow : Window
         var active = runtime.Row.Store.Active;
         var activeIds = active.Select(e => e.Id).ToHashSet();
         var signature = string.Join("|", runtime.Row.Store.Profile.Entries.Select(e => e.Id + ":" + e.Phase + ":" + e.StoredRelative + ":" + e.Hash + ":" + activeIds.Contains(e.Id)));
+        signature += "|" + runtime.Definition.Sort + "|" + string.Join("|", runtime.Definition.ManualOrder) + "|" + string.Join("|", runtime.ExternalItems.Select(item => item.IconKey + ":" + item.Available));
         if (runtime.ItemsSignature != signature)
         {
             runtime.ItemsSignature = signature;
-            runtime.Panel.SetPreparedItems(active.Select(e => (Path.GetFileNameWithoutExtension(e.OriginalPath), runtime.Row.Store.StoredPath(e), (BitmapSource?)null)));
+            runtime.Panel.SetPreparedItems(BuildContents(runtime.Row.Store).Where(item => item.ShowOnDesktop).Select(item => (item.Name, item.Path, item.Icon)));
             _ = Dispatcher.BeginInvoke(DispatcherPriority.Background,
                 new Action(() => { if (!disposed) _ = LoadRuntimeIconsAsync(runtime, signature); }));
         }
@@ -236,13 +255,13 @@ internal sealed partial class StorageWindow : Window
     }
     private void UpdateRow(DrawerRuntime runtime)
     {
-        runtime.Row.Issue = runtime.Issue; RefreshRowPresentation(runtime); runtime.Row.Refresh();
+        runtime.Row.Issue = runtime.Issue ?? runtime.ExternalIssue; RefreshRowPresentation(runtime); runtime.Row.Refresh();
         if (Selected?.Id == runtime.Definition.Id) FillIssue(runtime);
     }
     private void FillIssue(DrawerRuntime runtime)
     {
-        DrawerIssueLabel.Text = runtime.Issue ?? "";
-        DrawerIssueLabel.Visibility = runtime.Issue == null ? Visibility.Collapsed : Visibility.Visible;
+        DrawerIssueLabel.Text = runtime.Row.Issue ?? "";
+        DrawerIssueLabel.Visibility = runtime.Row.Issue == null ? Visibility.Collapsed : Visibility.Visible;
     }
     private void RecoverDesktop(bool force)
     {
@@ -265,7 +284,7 @@ internal sealed partial class StorageWindow : Window
                 if (!runtime.Started && !runtime.Definition.Removing)
                 {
                     runtime.Started = true;
-                    _ = RunStoreAsync(runtime, "恢复分组收纳", store => store.StartSession());
+                    if (runtime.Definition.Kind == DrawerKind.Desktop) _ = RunStoreAsync(runtime, "恢复分组收纳", store => store.StartSession());
                 }
             }
             catch (Exception exception) { failed = true; environmentIssue = "桌面连接暂不可用：" + exception.Message; }
@@ -291,7 +310,7 @@ internal sealed partial class StorageWindow : Window
         syncTimer.Stop();
         if (closing || maintenanceBusy) return;
         var retry = false;
-        foreach (var runtime in runtimes.Values.Where(r => r.Started && !r.Paused && !r.Definition.Removing).ToArray())
+        foreach (var runtime in runtimes.Values.Where(r => r.Started && r.Definition.Kind == DrawerKind.Desktop && !r.Paused && !r.Definition.Removing).ToArray())
         {
             if (runtime.Busy) { retry = true; continue; }
             retry |= !await RunStoreAsync(runtime, "同步桌面入口", store => store.Synchronize());
@@ -300,7 +319,7 @@ internal sealed partial class StorageWindow : Window
     }
     private void WatchChanged(object sender, FileSystemEventArgs e) => Dispatcher.BeginInvoke(() =>
     {
-        if (closing || maintenanceBusy || !ShortcutInfo.IsShortcut(e.FullPath)) return;
+        if (closing || maintenanceBusy) return;
         syncRetries = 0; syncTimer.Stop(); syncTimer.Start();
     });
     private void Issues(DrawerRuntime runtime, IReadOnlyList<string> issues, bool clear = true)
@@ -339,7 +358,11 @@ internal sealed partial class StorageWindow : Window
             AlwaysModeButton.IsChecked = !row.Store.Profile.Folded; HoverModeButton.IsChecked = row.Store.Profile.Folded && !row.Store.Profile.ManualExpansion; ManualModeButton.IsChecked = row.Store.Profile.ManualExpansion;
             ApplyLayoutButton.IsEnabled = !row.Store.Profile.Locked;
             foreach (var box in new[] { XBox, YBox, WidthBox, HeightBox }) box.IsEnabled = !row.Store.Profile.Locked;
-            if (SelectedRuntime is { } runtime) { FillGeometry(runtime); FillIssue(runtime); }
+            if (SelectedRuntime is { } runtime)
+            {
+                FillGeometry(runtime);
+                FillIssue(runtime);
+            }
             FillContents(row.Store);
         }
         finally { updating = false; }
@@ -378,22 +401,58 @@ internal sealed partial class StorageWindow : Window
     }
     private void NewDrawerClick(object sender, RoutedEventArgs e)
     {
-        CreateErrorLabel.Visibility = Visibility.Collapsed; ShowModal(CreateBox); NewNameBox.Text = ""; NewNameBox.Focus();
+        NewNameBox.Clear();
+        NewMappingPathBox.Clear();
+        DesktopDrawerKindCard.IsChecked = true;
+        UpdateCreateDrawerForm();
+        ShowModal(CreateBox);
+        DesktopDrawerKindCard.Focus();
+    }
+    private void CreateKindChanged(object sender, RoutedEventArgs e)
+    {
+        if (ConfirmCreateButton != null) UpdateCreateDrawerForm();
+    }
+    private void UpdateCreateDrawerForm()
+    {
+        var mapping = MappingDrawerKindCard.IsChecked == true;
+        NewMappingFields.Visibility = mapping ? Visibility.Visible : Visibility.Collapsed;
+        NewNameLabel.Text = mapping ? "抽屉名称（可选）" : "抽屉名称";
+        ConfirmCreateButton.Content = mapping ? "创建映射抽屉" : "创建整理抽屉";
+        CreateErrorLabel.Visibility = Visibility.Collapsed;
     }
     private void CancelCreateClick(object sender, RoutedEventArgs e) => DismissModal();
+    private void ShowCreateError(string message)
+    {
+        CreateErrorLabel.Text = message;
+        CreateErrorLabel.Visibility = Visibility.Visible;
+    }
     private void CreateClick(object sender, RoutedEventArgs e)
     {
-        try { CreateDrawer(NewNameBox.Text); }
-        catch (Exception exception) { CreateErrorLabel.Text = exception.Message; CreateErrorLabel.Visibility = Visibility.Visible; NewNameBox.Focus(); }
+        var mapping = MappingDrawerKindCard.IsChecked == true;
+        var name = NewNameBox.Text;
+        var directory = mapping ? NewMappingPathBox.Text : null;
+        if (mapping && string.IsNullOrWhiteSpace(directory))
+        {
+            ShowCreateError("请选择要映射的目录。");
+            ChooseMappingButton.Focus();
+            return;
+        }
+        if (directory != null && string.IsNullOrWhiteSpace(name))
+        {
+            name = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
+            if (string.IsNullOrWhiteSpace(name)) name = "映射文件夹";
+            if (name.Length > NewNameBox.MaxLength) name = name[..NewNameBox.MaxLength];
+        }
+        try { CreateDrawer(name, directory); }
+        catch (Exception error) { ShowCreateError(error.Message); NewNameBox.Focus(); }
     }
-    internal void CreateDrawer(string name)
+    internal void CreateDrawer(string name, string? mappedPath = null)
     {
         if (closing || maintenanceBusy || exitAfterOperations) throw new InvalidOperationException("正在退出，请等待文件归还完成。");
-        var definition = catalog.Create(name); AddRuntime(definition);
+        var definition = catalog.Create(name, mappedPath); AddRuntime(definition);
         DismissModal();
         SelectDrawer(definition.Id); RecoverDesktop(false); Status($"已创建「{definition.Name}」，可到桌面拖动和调整边缘。");
     }
-    private void NewNameKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) CreateClick(sender, e); if (e.Key == Key.Escape) CancelCreateClick(sender, e); }
     private void RenameKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) RenameClick(sender, e); }
     private void RenameClick(object sender, RoutedEventArgs e) => Try(() =>
     {
@@ -437,15 +496,15 @@ internal sealed partial class StorageWindow : Window
     });
     private void AddSelectedClick(object sender, RoutedEventArgs e) => Try(() =>
     {
-        if (demo || Selected == null) return;
+        if (demo || Selected == null || Selected.Definition.Kind != DrawerKind.Desktop) return;
         var selection = NativeIconLayout.ReadSelection();
-        if (selection.Count == 0) { Status("先在真实桌面选择快捷方式，再点击收纳。"); return; }
+        if (selection.Count == 0) { Status("先在个人桌面选择文件，再点击收纳。"); return; }
         QueueAddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray());
     });
     internal bool QueueAddPaths(string id, IReadOnlyList<string> paths)
     {
         var r = runtimes[id];
-        if (closing || maintenanceBusy || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing) return false;
+        if (closing || maintenanceBusy || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing || r.Definition.Kind != DrawerKind.Desktop || !r.Row.Store.CanAccept(paths)) return false;
         catalog.EnsureOwnership(id, paths);
         if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(paths, StringComparer.OrdinalIgnoreCase).Any()))
         { Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false; }
@@ -476,13 +535,15 @@ internal sealed partial class StorageWindow : Window
     private void OpenFolderClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (Selected is not { } row) return;
-        var folder = storage.Resolve($"storage/{row.Id}"); Directory.CreateDirectory(folder);
-        Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true });
+        Process.Start(DrawerLocationStartInfo(row.Id, terminal: false));
     });
     private void RemoveClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (Selected is not { } row) return;
-        if (MessageBox.Show(this, $"将「{row.Name}」的内容归还桌面并移除抽屉？历史恢复记录会保留。",
+        var message = row.Definition.Kind == DrawerKind.FolderMapping
+            ? $"移除「{row.Name}」的映射？真实目录及其中的文件会保留。"
+            : $"将「{row.Name}」的内容归还桌面并移除抽屉？历史恢复记录会保留。";
+        if (MessageBox.Show(this, message,
             "移除抽屉", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
         _ = RemoveDrawerAsync(row.Id);
     });
@@ -494,7 +555,7 @@ internal sealed partial class StorageWindow : Window
         if (issues.Count > 0) { Issues(r, issues); Status("归还未完成，抽屉及恢复记录已保留。"); return false; }
         r.Panel.Dispose(); runtimes.Remove(id); rows.Remove(r.Row);
         _ = ScanRecoveryAsync();
-        SelectDrawer(rows.FirstOrDefault()?.Id ?? ""); RecoverDesktop(false); Status("已归还内容并移除抽屉。");
+        SelectDrawer(rows.FirstOrDefault()?.Id ?? ""); RecoverDesktop(false); Status(r.Definition.Kind == DrawerKind.FolderMapping ? "已移除映射，真实目录保留。" : "已归还内容并移除抽屉。");
         return true;
     }
     private void DemoClick(object sender, RoutedEventArgs e) => Try(() => { if (demo) Status("当前已是隔离样例。"); else Process.Start(AppLaunch.StartInfo(storage, "--demo")); });
@@ -586,7 +647,10 @@ internal sealed partial class StorageWindow : Window
         public LayoutSnapSession Snap { get; set; } = new();
         public bool Started, Paused, Busy;
         public IReadOnlyList<string> PendingPaths = [];
-        public string? Issue, ItemsSignature;
+        public string? Issue, ItemsSignature, ExternalIssue;
+        public bool ScanningExternal;
+        public int ExternalGeneration;
+        public ExternalContent[] ExternalItems = [];
     }
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
