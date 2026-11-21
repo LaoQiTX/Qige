@@ -53,6 +53,17 @@ internal static class StoragePanelCheck
             if (pixels.OpaquePixels < 100 || pixels.BodyAlpha != 225) throw new InvalidOperationException("图标不透明度与半透明背景未正确分离。");
             if (errors.Count > 0) throw new InvalidOperationException(string.Join("；", errors));
             panel.SavePreview(storage.Resolve("checks/StoragePanel/preview.png"));
+            panel.SetTransparency(60);
+            var transparentPixels = panel.InspectPixels();
+            if (transparentPixels.BodyAlpha != 102 || transparentPixels.OpaquePixels < 100)
+                throw new InvalidOperationException("调整背景透明度影响了图标清晰度或未更新底色。");
+            panel.SavePreview(storage.Resolve("checks/StoragePanel/transparent.png"));
+            panel.SetTransparency(0);
+            if (panel.InspectPixels().BodyAlpha != 255) throw new InvalidOperationException("0% 透明度未呈现不透明背景。");
+            panel.RestorePreferences(new ShortcutProfile { Transparency = 999 });
+            if (panel.Transparency != 80) throw new InvalidOperationException("异常透明度未限制在可用范围。");
+            panel.RestorePreferences(new ShortcutProfile());
+            if (panel.InspectPixels().BodyAlpha != 225) throw new InvalidOperationException("旧配置默认透明度不兼容。");
             // Exercise the same enter/leave and OLE callbacks used by Explorer,
             // using project sample files and without injecting mouse input.
             var stableBuilds = panel.SurfaceBuilds;

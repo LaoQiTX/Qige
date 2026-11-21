@@ -72,6 +72,8 @@ internal static class ManagerChecks
                 Check(!window.IsVisible && new System.Windows.Interop.WindowInteropHelper(window).Handle == 0
                     && window.TrayAvailable && window.Panels.All(p => p.IsAttached),
                     "background launch attaches drawers and registers the tray without creating a manager HWND");
+                Check(((FrameworkElement)window.FindName("CanvasView")).Visibility == Visibility.Visible,
+                    "canvas is the initial manager view");
                 var originalPanels = window.Panels.ToArray();
                 var rendered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 window.ContentRendered += (_, _) => rendered.TrySetResult();
@@ -86,8 +88,43 @@ internal static class ManagerChecks
                 Check(window.Panels.Count == 2 && window.Panels.All(p => p.IsAttached), "manager attaches both independent demo drawers");
                 Check(((TextBlock)window.FindName("FooterVersionLabel")).Text.Contains(AppBrand.Version), "application version is persistently visible in the manager footer");
                 var menuPanel = window.Panels[0];
+                var transparencyHost = (ContentControl)window.FindName("DrawerTransparencyEditor");
+                var inspectorTransparency = Descendants(transparencyHost).OfType<Slider>().Single();
+                inspectorTransparency.Value = 60;
+                Check(menuPanel.Transparency == 60 && window.Catalog.Stores["default"].Detached().Profile.Transparency == 60
+                    && window.Panels[1].Transparency == DrawerAppearance.DefaultTransparency,
+                    "inspector transparency previews and persists only the current drawer");
                 menuPanel.OpenDrawerMenu(); await Task.Delay(150);
                 var settingsMenu = window.ActiveItemMenu!;
+                var transparencyParent = settingsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "transparency"));
+                transparencyParent.IsSubmenuOpen = true; await Task.Delay(150);
+                var transparencyPopup = (Popup)transparencyParent.Template.FindName("PART_Popup", transparencyParent);
+                var transparencySlider = Descendants((DependencyObject)transparencyPopup.Child).OfType<Slider>().Single();
+                Check(transparencySlider.ActualWidth >= 150 && transparencySlider.IsEnabled,
+                    "drawer settings submenu exposes a usable transparency slider");
+                transparencySlider.Value = 50;
+                var rootColor = ((SolidColorBrush)settingsMenu.Background).Color;
+                var submenuSurface = (Border)transparencyParent.Template.FindName("SubmenuSurface", transparencyParent);
+                var submenuColor = ((SolidColorBrush)submenuSurface.Background).Color;
+                Check(menuPanel.Transparency == 50 && window.Catalog.Stores["default"].Detached().Profile.Transparency == 50
+                    && rootColor.A < submenuColor.A && rootColor.R > submenuColor.R && settingsMenu.Opacity == 1,
+                    "menu slider persists immediately and live menu surfaces deepen without fading their text");
+                SaveMenuPreview((FrameworkElement)transparencyPopup.Child, storage.Resolve("drawer-transparency-submenu.png"));
+                var deeperParent = new MenuItem { Header = "层级检查", Style = (Style)settingsMenu.FindResource(typeof(MenuItem)) };
+                deeperParent.Items.Add(new MenuItem { Header = "深层项目", Style = deeperParent.Style });
+                transparencyParent.Items.Add(deeperParent);
+                DrawerMenuAppearance.Apply(settingsMenu, 50);
+                deeperParent.IsSubmenuOpen = true; await Task.Delay(120);
+                var deeperSurface = (Border)deeperParent.Template.FindName("SubmenuSurface", deeperParent);
+                var deeperColor = ((SolidColorBrush)deeperSurface.Background).Color;
+                Check(deeperColor.A > submenuColor.A && deeperColor.R < submenuColor.R,
+                    "third-level popup binds a denser and deeper surface than its parent");
+                deeperParent.IsSubmenuOpen = false; transparencyParent.Items.Remove(deeperParent);
+                transparencyParent.IsSubmenuOpen = false;
+                MenuEntries(settingsMenu.Items).Single(m => Equals(m.Tag, "transparency-default")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Check(menuPanel.Transparency == DrawerAppearance.DefaultTransparency
+                    && window.Catalog.Stores["default"].Detached().Profile.Transparency == DrawerAppearance.DefaultTransparency,
+                    "restore-default action persists the original drawer appearance");
                 Check(settingsMenu.IsOpen && MenuEntries(settingsMenu.Items).Any(m => Equals(m.Tag, "density-Compact")), "drawer ellipsis opens current-drawer settings with icon spacing controls");
                 SaveMenuPreview(settingsMenu, storage.Resolve("drawer-settings-menu.png"));
                 var densityParent = settingsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Tag, "density"));
@@ -106,6 +143,8 @@ internal static class ManagerChecks
                 SendMessage(menuPanel.Handle, 0x205, 0, (nint)((titleMenuY << 16) | (int)(40 * menuScale)));
                 await Task.Delay(150);
                 Check(window.ActiveItemMenu != null && MenuEntries(window.ActiveItemMenu.Items).Any(m => Equals(m.Tag, "manual")), $"right-clicking the title opens the same drawer settings menu (upward={menuPanel.ExpandsUpward}, interacting={menuPanel.IsInteracting}, menu={window.ActiveItemMenu?.IsOpen})");
+                Check(MenuEntries(window.ActiveItemMenu!.Items).Any(m => Equals(m.Tag, "transparency")),
+                    "native title right-click includes the shared transparency editor");
                 window.ActiveItemMenu!.IsOpen = false; await Task.Delay(250);
                 await window.WaitForIdleAsync();
                 Check(await window.BackupNowAsync(), "manager creates a complete manual backup through its serialized file worker");
@@ -163,6 +202,21 @@ internal static class ManagerChecks
                     "new website refuses duplicate names without replacing content or marking a healthy drawer as broken");
                 websiteStore.ReturnAndUngroup(websiteStore.StoredPath(website));
                 window.SelectDrawer("default"); window.SetManagerMode(true);
+                var layoutExpander = (Expander)window.FindName("LayoutExpander");
+                layoutExpander.IsExpanded = true;
+                var widthField = (TextBox)window.FindName("WidthBox");
+                var layoutError = (TextBlock)window.FindName("LayoutError");
+                var originalWidthText = widthField.Text;
+                var originalPanelWidth = window.Panels[0].LogicalWidth;
+                widthField.Text = "25";
+                ((Button)window.FindName("ApplyLayoutButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Check(FormFeedback.GetHasError(widthField) && layoutError.Text.Contains("244")
+                    && window.Panels[0].LogicalWidth == originalPanelWidth,
+                    "invalid geometry shows an inline field error without changing the drawer");
+                widthField.Text = originalWidthText;
+                Check(!FormFeedback.GetHasError(widthField) && layoutError.Text.Length == 0,
+                    "editing the invalid field clears the layout error");
+                layoutExpander.IsExpanded = false;
                 var addContents = (Button)window.FindName("AddContentsMenuButton");
                 var operations = (Button)window.FindName("MappedOperationsButton");
                 var sort = (Button)window.FindName("SortContentButton");
@@ -172,13 +226,49 @@ internal static class ManagerChecks
                 Rect Bounds(FrameworkElement element) => element.TransformToAncestor(center).TransformBounds(new Rect(element.RenderSize));
                 var fullWidth = window.Width;
                 window.Width = window.MinWidth;
+                await window.WaitForIdleAsync();
+                await Task.Delay(100);
                 window.UpdateLayout();
+                SaveManagerPreview(window, storage.Resolve("manager-workbench-minimum.png"));
                 Check(new[] { addContents, operations, sort, refresh }.All(button => button.IsVisible && button.IsEnabled
                         && Bounds(button).Left >= 0 && Bounds(button).Right <= center.ActualWidth + .5)
                     && Bounds(workbench).Right <= Bounds(addContents).Left
                     && Bounds(addContents).Bottom <= Bounds(operations).Top
                     && Bounds(operations).Right <= Bounds(sort).Left && Bounds(sort).Right <= Bounds(refresh).Left,
-                    "the workbench header and list controls fit in their own rows at minimum width");
+                    "the workbench header and list controls fit in their own rows at minimum width: "
+                    + string.Join("; ", new[] { addContents, operations, sort, refresh }.Select(button => $"{button.Name} visible={button.IsVisible} enabled={button.IsEnabled} bounds={Bounds(button)}"))
+                    + $"; center={center.ActualWidth}; title={Bounds(workbench)}");
+                var root = (FrameworkElement)window.Content;
+                var monitorDpi = VisualTreeHelper.GetDpi(root);
+                var minimumSize = new Size(window.MinWidth, window.MinHeight);
+                window.Content = null;
+                try
+                {
+                    foreach (var scale in new[] { 1.5, 2.0 })
+                    {
+                        VisualTreeHelper.SetRootDpi(root, new DpiScale(scale, scale));
+                        root.InvalidateMeasure();
+                        root.Measure(minimumSize);
+                        root.Arrange(new Rect(minimumSize));
+                        root.UpdateLayout();
+                        Check(VisualTreeHelper.GetDpi(addContents).DpiScaleX == scale
+                            && new[] { addContents, operations, sort, refresh }.All(button => Bounds(button).Right <= center.ActualWidth + .5)
+                            && Bounds(operations).Right <= Bounds(sort).Left && Bounds(sort).Right <= Bounds(refresh).Left,
+                            $"the minimum workbench keeps its text actions visible at {scale:P0} root DPI");
+                        var pixels = new RenderTargetBitmap((int)Math.Ceiling(minimumSize.Width * scale), (int)Math.Ceiling(minimumSize.Height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                        pixels.Render(root);
+                        var image = new PngBitmapEncoder();
+                        image.Frames.Add(BitmapFrame.Create(pixels));
+                        using var dpiPreview = File.Create(storage.Resolve($"manager-minimum-{scale * 96:0}dpi.png"));
+                        image.Save(dpiPreview);
+                    }
+                }
+                finally
+                {
+                    VisualTreeHelper.SetRootDpi(root, monitorDpi);
+                    window.Content = root;
+                    window.UpdateLayout();
+                }
                 addContents.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 await Task.Delay(120);
                 var addMenu = window.ActiveItemMenu!;
@@ -237,10 +327,11 @@ internal static class ManagerChecks
                     Check(log.RootElement.GetProperty("Reason").GetString() == "恢复日志写入"
                         && log.RootElement.GetProperty("Monitors").GetArrayLength() > 0,
                         "desktop diagnostics resume after a write failure and include the recovery reason and monitor topology");
+                window.SetManagerMode(false);
                 var canvasList = (ListBox)window.FindName("CanvasDrawerList");
                 var drawerList = (ListBox)window.FindName("DrawerList");
                 Check(((FrameworkElement)window.FindName("CanvasView")).Visibility == Visibility.Visible && canvasList.Items.Count == 2,
-                    "canvas opens by default with the real drawer count");
+                    "canvas displays the real drawer count after switching from the workbench");
                 var canvasScroll = (ScrollViewer)window.FindName("CanvasScroll");
                 var canvasHeight = canvasScroll.Height;
                 var canvasSelection = canvasList.SelectedItem;
@@ -430,6 +521,14 @@ internal static class ManagerChecks
                     "preference sync preserves independent geometry, names and shortcut membership");
                 window.SelectDrawer("default");
                 var first = window.Panels[0];
+                window.UpdateLayout();
+                ((Slider)Descendants((ContentControl)window.FindName("DrawerTransparencyEditor")).Single(e => e is Slider)).Value = 64;
+                Click(syncButton); syncExpansion.IsChecked = syncLock.IsChecked = false;
+                ((CheckBox)window.FindName("SyncTransparencyBox")).IsChecked = true; Click(syncConfirm);
+                Check(targetPanel.Transparency == 64 && targetStore.Detached().Profile.Transparency == 64,
+                    "transparency-only sync updates target surface and saved preference");
+                window.UpdateLayout();
+                ((Slider)Descendants((ContentControl)window.FindName("DrawerTransparencyEditor")).Single(e => e is Slider)).Value = DrawerAppearance.DefaultTransparency;
                 first.SetManualMode(); first.ToggleManual(); first.SetDensity(IconDensity.Compact);
                 Click(syncButton); syncLock.IsChecked = false; ((CheckBox)window.FindName("SyncDensityBox")).IsChecked = true; Click(syncConfirm);
                 Check(targetPanel.ManualExpansion && targetPanel.IsExpanded && targetPanel.Density == IconDensity.Compact

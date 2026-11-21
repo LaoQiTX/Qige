@@ -108,11 +108,11 @@ internal static class P0Checks
         var hash = VerifiedTransfer.Hash(stored);
         var detached = store.Detached();
         store.Profile.X = -1600; store.Profile.Y = 230; store.Profile.Width = 550;
-        store.Profile.Folded = true; store.Profile.Locked = true;
+        store.Profile.Folded = true; store.Profile.Locked = true; store.Profile.Transparency = 67;
         store.Publish(detached.Profile);
         var reloaded = store.Detached();
-        Check(reloaded.Profile.X == -1600 && reloaded.Profile.Y == 230 && reloaded.Profile.Width == 550 && reloaded.Profile.Folded && reloaded.Profile.Locked,
-            "publishing worker results preserves geometry, fold and lock edits made by the UI");
+        Check(reloaded.Profile.X == -1600 && reloaded.Profile.Y == 230 && reloaded.Profile.Width == 550 && reloaded.Profile.Folded && reloaded.Profile.Locked && reloaded.Profile.Transparency == 67,
+            "publishing worker results preserves geometry, fold, lock and transparency edits made by the UI");
         var collision = "[InternetShortcut]\r\nURL=https://example.com/different\r\n";
         File.WriteAllText(original, collision);
         var problems = await files.Run(() => RecoveryInspection.Inspect("default", "常用", store.Detached()));

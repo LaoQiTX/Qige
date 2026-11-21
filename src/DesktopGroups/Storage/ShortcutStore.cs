@@ -34,6 +34,7 @@ internal sealed class ShortcutProfile
     public bool ManualExpansion { get; set; }
     public bool ManualCollapsed { get; set; } = true;
     public IconDensity Density { get; set; } = IconDensity.Standard;
+    public int Transparency { get; set; } = DrawerAppearance.DefaultTransparency;
     public List<StoredShortcut> Entries { get; set; } = [];
     public List<StoredShortcut> Ungrouped { get; set; } = [];
 }
@@ -97,6 +98,7 @@ internal sealed class ShortcutStore
         result.X = Profile.X; result.Y = Profile.Y; result.Width = Profile.Width; result.Height = Profile.Height;
         result.Folded = Profile.Folded; result.Locked = Profile.Locked;
         result.ManualExpansion = Profile.ManualExpansion; result.ManualCollapsed = Profile.ManualCollapsed; result.Density = Profile.Density;
+        result.Transparency = Profile.Transparency;
         Profile = result; Save(); Changed?.Invoke();
     }
     internal void RetryEntry(string id, bool restore)

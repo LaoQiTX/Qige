@@ -14,7 +14,7 @@ internal sealed class DrawerReference
 internal sealed record ExternalContent(string Id, string Path, DrawerContentKind Kind, bool IsDirectory, bool Available,
     DateTime Modified, long Size)
 {
-    public string Name => System.IO.Path.GetFileName(Path) is { Length: > 0 } name ? name : Path;
+    public string Name => DrawerContentSource.DisplayName(Path, IsDirectory);
     public string Type => IsDirectory ? "文件夹" : System.IO.Path.GetExtension(Path);
     public string IconKey => $"{Id}:{Path}:{Modified.Ticks}:{Size}:{IsDirectory}";
 }
@@ -22,6 +22,15 @@ internal sealed record ExternalContent(string Id, string Path, DrawerContentKind
 internal static class DrawerContentSource
 {
     private const FileAttributes UnsupportedAttributes = FileAttributes.ReparsePoint | FileAttributes.Offline | FileAttributes.Device;
+
+    public static string DisplayName(string path, bool isDirectory)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Length == 0) return path;
+        if (!isDirectory && name.Length > 4 && name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+            return name[..^4];
+        return name;
+    }
 
     public static string Normalize(string path)
     {

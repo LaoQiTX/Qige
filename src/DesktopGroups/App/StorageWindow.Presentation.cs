@@ -167,7 +167,7 @@ internal sealed partial class StorageWindow
             var missing = recoveryProblems.Any(p => p.CanDismiss && p.EntryId == e.Id && p.OriginalPath == e.OriginalPath);
             var state = missing ? "文件已不存在 · 可移除记录" : collected ? "已收纳" : "在桌面／待检查";
             var coordinates = e.OriginalX.HasValue && e.OriginalY.HasValue ? $"原坐标 ({e.OriginalX}, {e.OriginalY})" : "未记录原坐标";
-            return new ManagerContent(e.Id, e.IsOrdinaryFile ? Path.GetFileName(e.OriginalPath) : Path.GetFileNameWithoutExtension(e.OriginalPath), e.OriginalPath, path,
+            return new ManagerContent(e.Id, DrawerContentSource.DisplayName(e.OriginalPath, e.IsDirectory), e.OriginalPath, path,
                 state, $"{state} · {coordinates}", missing ? null : icon, collected && !missing, !missing, missing)
             {
                 ShowOnDesktop = collected && !missing, IconKey = key, Type = e.IsDirectory ? "文件夹" : Path.GetExtension(path), Modified = File.GetLastWriteTimeUtc(path), Size = FileSize(path)

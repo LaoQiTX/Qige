@@ -20,10 +20,7 @@ internal sealed partial class StorageWindow
     {
         if (itemMenu != null) itemMenu.IsOpen = false;
         if (disposed || closing || maintenanceBusy || runtime.Definition.Removing) { runtime.Panel.CloseItemMenu(); return null; }
-        var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
-        menu.Resources.MergedDictionaries.Add(drawerItemMenuResources ??= new ResourceDictionary
-            { Source = new Uri("/Qige;component/App/DrawerItemMenu.xaml", UriKind.Relative) });
-        menu.Style = (Style)menu.FindResource(typeof(ContextMenu));
+        var menu = CreateStyledDrawerMenu(runtime);
         menu.Items.Add(new MenuItem { Header = runtime.Definition.Name, InputGestureText = purpose, IsEnabled = false,
             Style = (Style)menu.FindResource("DrawerMenuHeading") });
         menu.Closed += (_, _) => { if (itemMenu == menu) itemMenu = null; runtime.Panel.CloseItemMenu(); };
@@ -64,6 +61,20 @@ internal sealed partial class StorageWindow
             if (runtime.Panel.Density == value) densityMenu.InputGestureText = name;
         }
         menu.Items.Add(densityMenu);
+        var transparency = DrawerAction(menu, runtime, "transparency", "背景透明度", "Transparency");
+        transparency.InputGestureText = $"{runtime.Panel.Transparency}%";
+        transparency.Items.Add(new MenuItem { Tag = "transparency-editor", Header = CreateTransparencyEditor(runtime, inMenu: true),
+            Style = (Style)menu.FindResource("DrawerMenuEditor") });
+        Choice(transparency, "transparency-default", "恢复默认 · 12%", runtime.Panel.Transparency == DrawerAppearance.DefaultTransparency, () =>
+        {
+            runtime.Panel.SetTransparency(DrawerAppearance.DefaultTransparency);
+            var profile = runtime.Row.Store.Profile; var previous = profile.Transparency;
+            profile.Transparency = runtime.Panel.Transparency;
+            try { if (!runtime.Busy) runtime.Row.Store.Save(); }
+            catch { profile.Transparency = previous; runtime.Panel.SetTransparency(previous); throw; }
+            UpdateDetail();
+        });
+        menu.Items.Add(transparency);
         var locked = DrawerAction(menu, runtime, "lock", "锁定位置与尺寸", "Lock", () =>
         {
             var p = runtime.Row.Store.Profile; var old = p.Locked; p.Locked = !old;

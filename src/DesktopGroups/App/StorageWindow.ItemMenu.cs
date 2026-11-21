@@ -32,14 +32,9 @@ internal sealed partial class StorageWindow
             runtime.Panel.CloseItemMenu();
             return;
         }
-        var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
-        menu.Resources.MergedDictionaries.Add(drawerItemMenuResources ??= new ResourceDictionary
-        {
-            Source = new Uri("/Qige;component/App/DrawerItemMenu.xaml", UriKind.Relative)
-        });
-        menu.Style = (Style)menu.FindResource(typeof(ContextMenu));
+        var menu = CreateStyledDrawerMenu(runtime);
         itemMenu = menu;
-        var name = entry.IsOrdinaryFile ? Path.GetFileName(entry.OriginalPath) : Path.GetFileNameWithoutExtension(entry.OriginalPath);
+        var name = DrawerContentSource.DisplayName(entry.OriginalPath, entry.IsDirectory);
         menu.Items.Add(new MenuItem
         {
             Header = name, InputGestureText = entry.IsDirectory ? "文件夹" : entry.IsOrdinaryFile ? "文件" : "快捷方式", ToolTip = name, IsEnabled = false,

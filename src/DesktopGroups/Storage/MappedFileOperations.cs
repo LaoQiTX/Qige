@@ -219,7 +219,7 @@ internal sealed class MappedFileOperations(AppStorage storage)
 
     internal static string PathForNewItem(string directory, string name) => Path.Combine(directory, ValidateLeaf(name));
 
-    private static string ValidateLeaf(string name)
+    internal static string ValidateLeaf(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.StartsWith(".qige-transfer-", StringComparison.OrdinalIgnoreCase) || name.EndsWith('.') || name.EndsWith(' ') || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new IOException("请输入有效的文件名或文件夹名。");

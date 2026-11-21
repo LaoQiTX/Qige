@@ -237,7 +237,7 @@ internal sealed partial class StorageWindow
     private void SortContentClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (sender is not Button button || SelectedRuntime is not { } runtime) return;
-        var menu = new ContextMenu { PlacementTarget = button };
+        var menu = CreateStyledDrawerMenu(runtime, button);
         foreach (var (sort, label) in new[] { (DrawerSort.Manual, "手动顺序"), (DrawerSort.Name, "名称"),
             (DrawerSort.Type, "类型"), (DrawerSort.Modified, "修改时间"), (DrawerSort.Size, "大小") })
         {
@@ -254,7 +254,7 @@ internal sealed partial class StorageWindow
         var choice = StudioContentsList.SelectedItems.Cast<ManagerContent>().Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (choice.Count > 0)
         {
-            menu.Items.Add(new Separator());
+            menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
             var up = new MenuItem { Header = "选中项上移" };
             var down = new MenuItem { Header = "选中项下移" };
             up.Click += (_, _) => Try(() => NudgeContent(runtime, choice, -1));

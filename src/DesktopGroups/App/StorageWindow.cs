@@ -362,6 +362,7 @@ internal sealed partial class StorageWindow : Window
             foreach (var box in new[] { XBox, YBox, WidthBox, HeightBox }) box.IsEnabled = !row.Store.Profile.Locked;
             if (SelectedRuntime is { } runtime)
             {
+                DrawerTransparencyEditor.Content = CreateTransparencyEditor(runtime);
                 FillGeometry(runtime);
                 FillIssue(runtime);
             }
@@ -373,6 +374,8 @@ internal sealed partial class StorageWindow : Window
     private void FillGeometry(DrawerRuntime runtime)
     {
         var p = runtime.Row.Store.Profile;
+        foreach (var field in new[] { XBox, YBox, WidthBox, HeightBox }) FormFeedback.SetError(field, null);
+        FormFeedback.ShowError(LayoutError, "");
         XBox.Text = p.X.ToString(CultureInfo.InvariantCulture); YBox.Text = p.Y.ToString(CultureInfo.InvariantCulture);
         WidthBox.Text = Math.Round(p.Width).ToString(CultureInfo.InvariantCulture);
         HeightBox.Text = Math.Round(p.Height).ToString(CultureInfo.InvariantCulture);
@@ -489,13 +492,32 @@ internal sealed partial class StorageWindow : Window
     private void ApplyLayoutClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (SelectedRuntime is not { } r || r.Row.Store.Profile.Locked) return;
-        if (!int.TryParse(XBox.Text, out var x) || !int.TryParse(YBox.Text, out var y)
-            || !double.TryParse(WidthBox.Text, out var width) || !double.TryParse(HeightBox.Text, out var height)
-            || !double.IsFinite(width) || !double.IsFinite(height) || width is < 244 or > 1400 || height is < 160 or > 1100
-            || x is < -100000 or > 100000 || y is < -100000 or > 100000)
-            throw new ArgumentException("请输入有效位置；宽度 244–1400，高度 160–1100。");
+        var validX = int.TryParse(XBox.Text, out var x) && x is >= -100000 and <= 100000;
+        var validY = int.TryParse(YBox.Text, out var y) && y is >= -100000 and <= 100000;
+        var validWidth = double.TryParse(WidthBox.Text, out var width) && width is >= 244 and <= 1400;
+        var validHeight = double.TryParse(HeightBox.Text, out var height) && height is >= 160 and <= 1100;
+        FormFeedback.SetError(XBox, validX ? null : "横向位置需为 −100000 到 100000 的整数。");
+        FormFeedback.SetError(YBox, validY ? null : "纵向位置需为 −100000 到 100000 的整数。");
+        FormFeedback.SetError(WidthBox, validWidth ? null : "宽度需在 244 到 1400 之间。");
+        FormFeedback.SetError(HeightBox, validHeight ? null : "高度需在 160 到 1100 之间。");
+        var firstInvalid = new[] { XBox, YBox, WidthBox, HeightBox }.FirstOrDefault(FormFeedback.GetHasError);
+        if (firstInvalid != null)
+        {
+            FormFeedback.ShowError(LayoutError, System.Windows.Automation.AutomationProperties.GetHelpText(firstInvalid));
+            firstInvalid.Focus();
+            return;
+        }
+        FormFeedback.ShowError(LayoutError, "");
         r.Panel.ApplyScreenLayout(x, y, width, height); SaveLayout(r); Status("布局已保存。");
     });
+
+    private void LayoutFieldChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        if (LayoutError == null) return;
+        FormFeedback.SetError((System.Windows.Controls.TextBox)sender, null);
+        FormFeedback.ShowError(LayoutError, "");
+    }
+
     private void AddSelectedClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (demo || Selected == null || Selected.Definition.Kind != DrawerKind.Desktop) return;

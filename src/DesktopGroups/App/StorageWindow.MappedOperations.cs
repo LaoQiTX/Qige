@@ -211,7 +211,7 @@ internal sealed partial class StorageWindow
     private void MappedOperationsClick(object sender, RoutedEventArgs e) => Try(() =>
     {
         if (sender is not Button button || SelectedRuntime is not { } runtime) return;
-        var menu = new ContextMenu { PlacementTarget = button };
+        var menu = CreateStyledDrawerMenu(runtime, button);
         var paths = SelectedMappedItems();
         void Add(string title, Action command, bool enabled = true)
         {
@@ -384,17 +384,39 @@ internal sealed partial class StorageWindow
     private string? AskFileName(string title, string initial)
     {
         ShowControl();
-        var input = new TextBox { Text = initial, MinWidth = 300, Margin = new Thickness(0, 0, 0, 12), Padding = new Thickness(6) };
-        var dialog = new Window { Title = title, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, ShowInTaskbar = false };
-        var controls = new StackPanel { Margin = new Thickness(16) };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        var confirm = new Button { Content = "确定", IsDefault = true, MinWidth = 72, Margin = new Thickness(0, 0, 8, 0) };
-        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 72 };
-        confirm.Click += (_, _) => dialog.DialogResult = true;
-        buttons.Children.Add(confirm);
+        var dialog = new Window
+        {
+            Title = title, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, ShowInTaskbar = false,
+            Background = AppPalette.Surface, Foreground = AppPalette.Text, FontFamily = FontFamily,
+            FontSize = FontSize, UseLayoutRounding = true
+        };
+        dialog.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Qige;component/App/SharedControls.xaml", UriKind.Relative) });
+        var input = new TextBox { Text = initial };
+        System.Windows.Automation.AutomationProperties.SetName(input, "文件或文件夹名称");
+        var message = new TextBlock { Style = (Style)dialog.FindResource("InputError"), Text = "" };
+        var controls = new StackPanel { Width = 336, Margin = new Thickness(20) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var confirm = new Button { Content = "确定", IsDefault = true, MinWidth = 72, Style = (Style)dialog.FindResource("PrimaryButton") };
+        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 72, Margin = new Thickness(0, 0, 8, 0) };
+        confirm.Click += (_, _) =>
+        {
+            try { MappedFileOperations.ValidateLeaf(input.Text); }
+            catch (IOException error)
+            {
+                FormFeedback.SetError(input, error.Message);
+                FormFeedback.ShowError(message, error.Message);
+                input.Focus();
+                return;
+            }
+            dialog.DialogResult = true;
+        };
+        input.TextChanged += (_, _) => { FormFeedback.SetError(input, null); FormFeedback.ShowError(message, ""); };
         buttons.Children.Add(cancel);
+        buttons.Children.Add(confirm);
+        controls.Children.Add(new TextBlock { Text = "文件或文件夹名称", Margin = new Thickness(0, 0, 0, 6) });
         controls.Children.Add(input);
+        controls.Children.Add(message);
         controls.Children.Add(buttons);
         dialog.Content = controls;
         dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };

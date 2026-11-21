@@ -42,12 +42,13 @@ internal sealed class ShortcutPanel : IDisposable
     private bool disposed;
     private bool dragging, tracking, folded, hoveringOpen;
     private NativeDesktop.Point dragStart;
-    private int startX, startY, selected = -1, hovered = -1;
+    private int startX, startY, selected = -1, hovered = -1, headerHovered;
     private string title = "常用";
     private double logicalWidth = 420, logicalHeight = 352, scrollOffset;
     private bool layoutLocked, scrolling, highlighted;
     private bool itemMenuOpen, manualExpansion, expandsUpward, suppressHoverUntilLeave;
     private IconDensity density = IconDensity.Standard;
+    internal int Transparency { get; private set; } = DrawerAppearance.DefaultTransparency;
     internal bool ManualExpansion => manualExpansion;
     internal bool ManualCollapsed => !hoveringOpen;
     internal bool ExpandsUpward => expandsUpward;
@@ -206,6 +207,7 @@ internal sealed class ShortcutPanel : IDisposable
         manualExpansion = profile.ManualExpansion;
         hoveringOpen = manualExpansion && !profile.ManualCollapsed;
         density = Enum.IsDefined(profile.Density) ? profile.Density : IconDensity.Standard;
+        Transparency = DrawerAppearance.NormalizeTransparency(profile.Transparency);
         displayHeight = animationFrom = animationTo = IsExpanded ? logicalHeight : 46;
         if (IsAttached) { EnsureAttached(true); Render(); }
     }
@@ -213,6 +215,14 @@ internal sealed class ShortcutPanel : IDisposable
     internal void SetDensity(IconDensity value)
     {
         density = value; scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll); Render(); PreferencesChanged?.Invoke();
+    }
+
+    internal void SetTransparency(int value)
+    {
+        value = DrawerAppearance.NormalizeTransparency(value);
+        if (Transparency == value) return;
+        Transparency = value;
+        if (IsAttached) Render();
     }
 
     internal void ToggleManual()
@@ -314,17 +324,33 @@ internal sealed class ShortcutPanel : IDisposable
         {
             drawing.PushTransform(new ScaleTransform(scale, scale));
             var height = logicalHeight;
-            drawing.DrawRoundedRectangle(AppPalette.Translucent(225, AppPalette.Sidebar), new Pen(AppPalette.Translucent(40, AppPalette.Text), 1), new Rect(.5, .5, logicalWidth - 1, height - 1), 12, 12);
+            drawing.DrawRoundedRectangle(DrawerAppearance.Surface(Transparency), new Pen(DrawerAppearance.Edge, 1),
+                new Rect(.5, .5, logicalWidth - 1, height - 1), 12, 12);
+            drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.InnerEdge, 1),
+                new Rect(1.5, 1.5, logicalWidth - 3, height - 3), 11, 11);
             var titleY = expandsUpward ? height - 46 : 0;
-            Text(drawing, title, 19, titleY + 12, 15, AppPalette.Text.Color, Math.Max(60, logicalWidth - 101), 24, FontWeights.SemiBold);
-            Text(drawing, "···", logicalWidth - 74, titleY + 9, 18, AppPalette.Secondary.Color, 28, 25);
-            Text(drawing, IsExpanded ? "−" : "+", logicalWidth - 36, titleY + 10, 19, AppPalette.Secondary.Color, 20, 25);
-            drawing.DrawLine(new Pen(AppPalette.Translucent(20, AppPalette.Text), 1), new Point(16, expandsUpward ? titleY : 45), new Point(logicalWidth - 16, expandsUpward ? titleY : 45));
+            Text(drawing, title, 20, titleY + 13, 13, DrawerAppearance.Text.Color,
+                Math.Max(60, logicalWidth - 109), 22, FontWeights.SemiBold);
+            DrawHeaderControls(drawing, titleY);
+            if (IsExpanded)
+                drawing.DrawLine(new Pen(DrawerAppearance.Divider, 1),
+                    new Point(18, expandsUpward ? titleY : 45), new Point(logicalWidth - 18, expandsUpward ? titleY : 45));
             drawing.PushClip(new RectangleGeometry(new Rect(10, expandsUpward ? 8 : 49, logicalWidth - 20, height - 57)));
             if (items.Count == 0)
             {
-                Text(drawing, "把常用入口放在这里", 24, BodyTop + 31, 16, AppPalette.Text.Color, logicalWidth - 48, 46, FontWeights.SemiBold);
-                Text(drawing, "拖入桌面快捷方式，或从管理面板添加", 24, BodyTop + 83, 12, AppPalette.Muted.Color, logicalWidth - 48, 45);
+                var center = logicalWidth / 2;
+                var emptyPen = new Pen(DrawerAppearance.Muted, 1.35) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                drawing.DrawRoundedRectangle(DrawerAppearance.Hover, null, new Rect(center - 18, BodyTop + 6, 36, 36), 10, 10);
+                drawing.DrawLine(emptyPen, new Point(center - 9, BodyTop + 21), new Point(center - 9, BodyTop + 30));
+                drawing.DrawLine(emptyPen, new Point(center - 9, BodyTop + 30), new Point(center + 9, BodyTop + 30));
+                drawing.DrawLine(emptyPen, new Point(center + 9, BodyTop + 30), new Point(center + 9, BodyTop + 21));
+                drawing.DrawLine(emptyPen, new Point(center, BodyTop + 15), new Point(center, BodyTop + 24));
+                drawing.DrawLine(emptyPen, new Point(center - 3, BodyTop + 21), new Point(center, BodyTop + 24));
+                drawing.DrawLine(emptyPen, new Point(center, BodyTop + 24), new Point(center + 3, BodyTop + 21));
+                Text(drawing, "拖入文件，开始整理", 20, BodyTop + 49, 13, DrawerAppearance.Text.Color,
+                    logicalWidth - 40, 22, FontWeights.Medium, TextAlignment.Center);
+                Text(drawing, "也可以右键添加文件或文件夹", 20, BodyTop + 74, 11, DrawerAppearance.Muted.Color,
+                    logicalWidth - 40, 24, alignment: TextAlignment.Center);
             }
             for (var index = 0; index < items.Count; index++)
             {
@@ -332,25 +358,29 @@ internal sealed class ShortcutPanel : IDisposable
                 var top = BodyTop + index / Columns * RowHeight - scrollOffset;
                 if (top + RowHeight - 6 < (expandsUpward ? 8 : 49) || top > height - (expandsUpward ? 49 : 8)) continue;
                 var cell = new Rect(left, top, CellWidth - 4, RowHeight - 6);
-                if (index == selected) drawing.DrawRoundedRectangle(AppPalette.Translucent(38, AppPalette.Text), new Pen(AppPalette.Translucent(95, AppPalette.Text), 1), cell, 7, 7);
-                else if (index == hovered) drawing.DrawRoundedRectangle(AppPalette.Translucent(12, AppPalette.Text), new Pen(AppPalette.Translucent(22, AppPalette.Text), 1), cell, 7, 7);
+                if (index == selected) drawing.DrawRoundedRectangle(DrawerAppearance.Selected, new Pen(DrawerAppearance.SelectedEdge, 1), cell, 9, 9);
+                else if (index == hovered) drawing.DrawRoundedRectangle(DrawerAppearance.Hover, new Pen(DrawerAppearance.HoverEdge, 1), cell, 9, 9);
                 var center = left + (CellWidth - 4) / 2;
                 if (items[index].Icon is { } icon) drawing.DrawImage(icon, new Rect(center - 20, top + 7, 40, 40));
-                else drawing.DrawRoundedRectangle(AppPalette.ScrollThumb, null, new Rect(center - 16, top + 11, 32, 32), 6, 6);
-                Text(drawing, items[index].Name, left + 4, top + 53, 11, AppPalette.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
+                else drawing.DrawRoundedRectangle(DrawerAppearance.Placeholder, null, new Rect(center - 16, top + 11, 32, 32), 7, 7);
+                Text(drawing, items[index].Name, left + 4, top + 53, 11, DrawerAppearance.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
             }
             drawing.Pop();
             if (MaxScroll > 0)
             {
                 var track = height - 64;
                 var thumb = Math.Max(24, track * track / (track + MaxScroll));
-                drawing.DrawRoundedRectangle(AppPalette.Translucent(95, AppPalette.Secondary), null,
+                drawing.DrawRoundedRectangle(DrawerAppearance.Scroll, null,
                     new Rect(logicalWidth - 8, (expandsUpward ? 8 : 54) + scrollOffset / MaxScroll * (track - thumb), 3, thumb), 1.5, 1.5);
             }
-            if (!layoutLocked)
-                drawing.DrawLine(new Pen(AppPalette.Translucent(72, AppPalette.Secondary), 1), new Point(logicalWidth - 16, height - 8), new Point(logicalWidth - 8, height - 16));
-            if (highlighted) drawing.DrawRoundedRectangle(null, new Pen(AppPalette.Translucent(235, AppPalette.Accent), 2), new Rect(1, 1, logicalWidth - 2, height - 2), 11, 11);
-            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(AppPalette.Translucent(180, AppPalette.Accent), 1.5), new Rect(2, 2, logicalWidth - 4, height - 4), 10, 10);
+            if (!layoutLocked && IsExpanded)
+            {
+                var grip = new Pen(DrawerAppearance.Scroll, 1) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                drawing.DrawLine(grip, new Point(logicalWidth - 16, height - 8), new Point(logicalWidth - 8, height - 16));
+                drawing.DrawLine(grip, new Point(logicalWidth - 12, height - 8), new Point(logicalWidth - 8, height - 12));
+            }
+            if (highlighted) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Accent, 2), new Rect(1, 1, logicalWidth - 2, height - 2), 11, 11);
+            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.SelectedEdge, 1.5), new Rect(2, 2, logicalWidth - 4, height - 4), 10, 10);
             drawing.Pop();
         }
         var bitmap = new RenderTargetBitmap(Width, FullHeight, 96, 96, PixelFormats.Pbgra32);
@@ -364,6 +394,29 @@ internal sealed class ShortcutPanel : IDisposable
             animationClock.Restart(); animationTimer.Start();
         }
         Present();
+    }
+
+    private void DrawHeaderControls(DrawingContext drawing, double top)
+    {
+        for (var control = 1; control <= 2; control++)
+        {
+            var center = logicalWidth - (control == 1 ? 62 : 22);
+            if (headerHovered == control)
+                drawing.DrawRoundedRectangle(DrawerAppearance.Hover, new Pen(DrawerAppearance.HoverEdge, 1),
+                    new Rect(center - 16, top + 7, 32, 32), 8, 8);
+            if (control == 1)
+            {
+                for (var dot = -1; dot <= 1; dot++)
+                    drawing.DrawEllipse(DrawerAppearance.Secondary, null, new Point(center + dot * 5, top + 23), 1.25, 1.25);
+            }
+            else
+            {
+                var pen = new Pen(DrawerAppearance.Secondary, 1.4) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                var direction = IsExpanded == expandsUpward ? 1 : -1;
+                drawing.DrawLine(pen, new Point(center - 4, top + 23 - direction * 2), new Point(center, top + 23 + direction * 2));
+                drawing.DrawLine(pen, new Point(center, top + 23 + direction * 2), new Point(center + 4, top + 23 - direction * 2));
+            }
+        }
     }
 
     private void AdvanceAnimation()
@@ -475,6 +528,9 @@ internal sealed class ShortcutPanel : IDisposable
         if (folded && !manualExpansion && !suppressHoverUntilLeave && !hoveringOpen) { hoveringOpen = true; needsRender = true; }
         var next = HitItem(x, y);
         if (next != hovered) { hovered = next; needsRender = true; }
+        var nextHeader = HitTitle(y) && x >= Width - 82 * scale && x < Width && y >= 0 && y < Height
+            ? x > Width - 42 * scale ? 2 : 1 : 0;
+        if (nextHeader != headerHovered) { headerHovered = nextHeader; needsRender = true; }
         if (needsRender) Render();
     }
 
@@ -491,8 +547,8 @@ internal sealed class ShortcutPanel : IDisposable
     {
         tracking = false;
         if (!IsInteracting) suppressHoverUntilLeave = false;
-        var needsRender = hovered != -1;
-        hovered = -1;
+        var needsRender = hovered != -1 || headerHovered != 0;
+        hovered = -1; headerHovered = 0;
         // Captured resize/scroll gestures can leave the visible bounds. Keep
         // the expanded surface until the gesture ends, just as for dragging.
         if (!IsInteracting && folded && !manualExpansion && hoveringOpen) { hoveringOpen = false; needsRender = true; }
@@ -777,11 +833,11 @@ internal sealed class ShortcutPanel : IDisposable
         else { PointerMove(point.X, point.Y); TrackPointerLeave(); }
     }
 
-    private static void Text(DrawingContext drawing, string text, double x, double y, double size, Color color, double width, double height, FontWeight? weight = null, TextAlignment alignment = TextAlignment.Left)
+    private void Text(DrawingContext drawing, string text, double x, double y, double size, Color color, double width, double height, FontWeight? weight = null, TextAlignment alignment = TextAlignment.Left)
     {
         if (string.IsNullOrEmpty(text)) return;
         var formatted = new FormattedText(text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
-            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, weight ?? FontWeights.Normal, FontStretches.Normal), size, new SolidColorBrush(color), 1)
+            new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, weight ?? FontWeights.Normal, FontStretches.Normal), size, new SolidColorBrush(color), scale)
         { MaxTextWidth = width, MaxTextHeight = height, Trimming = TextTrimming.CharacterEllipsis, TextAlignment = alignment };
         drawing.DrawText(formatted, new Point(x, y));
     }
