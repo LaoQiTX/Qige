@@ -30,11 +30,12 @@ internal sealed class DrawerCatalog
 {
     private readonly AppStorage storage;
     private readonly string? desktop;
+    private readonly string? publicDesktop;
     public DrawerSettings Settings { get; }
     public Dictionary<string, ShortcutStore> Stores { get; } = [];
-    public DrawerCatalog(AppStorage storage, string? desktop = null)
+    public DrawerCatalog(AppStorage storage, string? desktop = null, string? publicDesktop = null)
     {
-        this.storage = storage; this.desktop = desktop;
+        this.storage = storage; this.desktop = desktop; this.publicDesktop = publicDesktop;
         var path = storage.Resolve("config/drawers.json");
         Settings = File.Exists(path) ? JsonSerializer.Deserialize<DrawerSettings>(File.ReadAllText(path))
             ?? throw new IOException("抽屉列表无法读取。") : new();
@@ -83,7 +84,7 @@ internal sealed class DrawerCatalog
             .GroupBy(e => e.OriginalPath, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
         if (duplicate != null) throw new IOException("同一个桌面入口属于多个抽屉，未开始收纳，请检查恢复记录。");
     }
-    private ShortcutStore Open(string id) => new(storage, desktop, $"config/groups/{id}.json", $"storage/{id}");
+    private ShortcutStore Open(string id) => new(storage, desktop, $"config/groups/{id}.json", $"storage/{id}", publicDesktop);
     public void Save()
     {
         if (Settings.Drawers.Any(d => d.Kind == DrawerKind.FolderMapping || d.References.Count > 0 || d.Sort != DrawerSort.Manual || d.ManualOrder.Count > 0))
@@ -126,6 +127,21 @@ internal sealed class DrawerCatalog
         }
         drawer.References.AddRange(additions);
         try { Save(); } catch { foreach (var entry in additions) drawer.References.Remove(entry); throw; }
+    }
+
+    // diag.2 may already contain a reference to the item being collected. Retire
+    // it only after the verified managed copy has replaced the desktop name.
+    internal bool RetireCollectedReferences(string id)
+    {
+        var drawer = Find(id);
+        var store = Stores[id];
+        var collected = store.Active.Where(e => e.Phase == "Stored" && e.TransferVerified && !ShortcutStore.Exists(e, e.OriginalPath))
+            .Select(e => e.OriginalPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var original = drawer.References.ToArray();
+        if (drawer.References.RemoveAll(reference => collected.Contains(reference.Path)) == 0) return false;
+        try { Save(); }
+        catch { drawer.References.Clear(); drawer.References.AddRange(original); throw; }
+        return true;
     }
 
     public void RelocateReference(string id, string entryId, string path)

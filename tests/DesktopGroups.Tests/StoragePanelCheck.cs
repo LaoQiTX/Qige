@@ -345,21 +345,37 @@ internal static class StoragePanelCheck
     internal sealed class ShellSampleData : IDisposable
     {
         public IDataObject Data { get; }
-        public ShellSampleData(string path)
+        public ShellSampleData(params string[] paths)
         {
-            nint folder = 0, item = 0;
+            nint folder = 0;
+            var items = new List<nint>();
             try
             {
-                System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHParseDisplayName(Path.GetDirectoryName(path)!, 0, out folder, 0, out _));
-                System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHParseDisplayName(path, 0, out item, 0, out _));
+                System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHParseDisplayName(Path.GetDirectoryName(paths[0])!, 0, out folder, 0, out _));
+                foreach (var path in paths.Take(1))
+                {
+                    System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHParseDisplayName(path, 0, out var item, 0, out _));
+                    items.Add(item);
+                }
                 var id = new Guid("0000010e-0000-0000-C000-000000000046");
-                System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHCreateDataObject(folder, 1, [ILFindLastID(item)], 0, in id, out var data));
+                var relative = folder == 0 ? items.ToArray() : items.Select(ILFindLastID).ToArray();
+                System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(SHCreateDataObject(folder, (uint)relative.Length, relative, 0, in id, out var data));
                 Data = data;
+                if (paths.Length > 1)
+                {
+                    // Shell folders have a single parent PIDL; supply the merged
+                    // desktop file list while retaining Shell SetData receipts.
+                    var merged = (IDataObject)new System.Windows.DataObject(System.Windows.DataFormats.FileDrop, paths);
+                    var format = new FORMATETC { cfFormat = 15, dwAspect = DVASPECT.DVASPECT_CONTENT, lindex = -1, tymed = TYMED.TYMED_HGLOBAL };
+                    merged.GetData(ref format, out var medium);
+                    try { Data.SetData(ref format, ref medium, true); }
+                    catch { ReleaseStgMedium(ref medium); throw; }
+                }
             }
             finally
             {
                 if (folder != 0) System.Runtime.InteropServices.Marshal.FreeCoTaskMem(folder);
-                if (item != 0) System.Runtime.InteropServices.Marshal.FreeCoTaskMem(item);
+                foreach (var item in items) System.Runtime.InteropServices.Marshal.FreeCoTaskMem(item);
             }
         }
         public void Dispose() => System.Runtime.InteropServices.Marshal.ReleaseComObject(Data);

@@ -67,8 +67,8 @@ internal static class InputDiagnosticsChecks
         File.WriteAllText(first, "[InternetShortcut]\r\nURL=https://example.com/first\r\n");
         File.WriteAllText(second, "[InternetShortcut]\r\nURL=https://example.com/second\r\n");
         var common = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        Assert(!store.CanAccept([Path.Combine(common, "DeskBox.lnk")], out var reason) && reason.Contains("公共桌面"),
-            "managed storage still refuses moving public-desktop originals; the input router adds references instead");
+        Assert(store.PublicDesktopPath.Length == 0 && !store.CanAccept([Path.Combine(common, "DeskBox.lnk")], out var reason),
+            "isolated desktops never gain access to the real public desktop");
         Assert(!store.CanAccept([], out reason) && reason.Length > 0, "empty file lists have a rejection reason");
         var events = new List<(string Stage, JsonElement Detail)>();
         using (var log = new InputDiagnostics(storage))

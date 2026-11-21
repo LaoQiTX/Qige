@@ -57,8 +57,8 @@ internal sealed partial class StorageWindow
             menu.Items.Add(item);
         }
 
-        Add("add", "收纳桌面文件…", "Properties", () => AddDesktopFiles(runtime), ready && !demo, "将个人桌面上的文件移入此抽屉");
-        Add("add-folder", "收纳桌面文件夹…", "Location", () => PickManagedFolder(runtime), ready && !demo, "将个人桌面上的文件夹移入此抽屉");
+        Add("add", "收纳桌面文件…", "Properties", () => AddDesktopFiles(runtime), ready && !demo, "将个人或公共桌面上的文件移入此抽屉");
+        Add("add-folder", "收纳桌面文件夹…", "Location", () => PickManagedFolder(runtime), ready && !demo, "将个人或公共桌面上的文件夹移入此抽屉");
         menu.Items.Add(new Separator { Style = (Style)menu.FindResource(typeof(Separator)) });
         Add("reference", "引用外部文件…", "Properties", () => ChooseReferences(runtime, false), ready && !demo, "添加文件入口，原文件留在原处");
         Add("reference-folder", "引用外部文件夹…", "Location", () => ChooseReferences(runtime, true), ready && !demo, "添加文件夹入口，原文件夹留在原处");
@@ -98,7 +98,7 @@ internal sealed partial class StorageWindow
     private void AddDesktopFiles(DrawerRuntime runtime)
     {
         if (runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing) return;
-        var picker = new OpenFileDialog { Title = "选择桌面文件（公共桌面项目按引用添加）", InitialDirectory = runtime.Row.Store.DesktopPath,
+        var picker = new OpenFileDialog { Title = "选择个人或公共桌面文件（实际收纳）", InitialDirectory = runtime.Row.Store.DesktopPath,
             Filter = "所有文件 (*.*)|*.*", Multiselect = true, DereferenceLinks = false };
         ShowControl();
         if (picker.ShowDialog(this) != true) return;
@@ -108,7 +108,7 @@ internal sealed partial class StorageWindow
     {
         if (demo || runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing || exitAfterOperations) return;
         ShowControl();
-        var picker = new OpenFolderDialog { Title = "选择桌面文件夹（公共桌面项目按引用添加）", InitialDirectory = runtime.Row.Store.DesktopPath, Multiselect = true };
+        var picker = new OpenFolderDialog { Title = "选择个人或公共桌面文件夹（实际收纳）", InitialDirectory = runtime.Row.Store.DesktopPath, Multiselect = true };
         if (picker.ShowDialog(this) != true) return;
         QueueAddPaths(runtime.Definition.Id, picker.FolderNames, "folder-picker");
     }

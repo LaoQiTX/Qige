@@ -322,6 +322,7 @@ internal sealed partial class StorageWindow
             });
             if (disposed) return false;
             runtime.Row.Store.Publish(result.Profile);
+            if (catalog.RetireCollectedReferences(runtime.Definition.Id)) InvalidateExternalContents(runtime);
             Issues(runtime, result.issues); success = result.issues.Count == 0;
             if (success) Status(operation + "完成。");
         }

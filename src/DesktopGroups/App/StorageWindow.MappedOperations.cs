@@ -297,7 +297,7 @@ internal sealed partial class StorageWindow
         if (demo || runtime.Busy) return;
         var name = AskFileName("重命名", Path.GetFileName(item.OriginalPath));
         if (name == null) return;
-        var target = MappedFileOperations.PathForNewItem(runtime.Row.Store.DesktopPath, name);
+        var target = MappedFileOperations.PathForNewItem(Path.GetDirectoryName(item.OriginalPath)!, name);
         if (target.Equals(item.OriginalPath, StringComparison.OrdinalIgnoreCase)) return;
         catalog.EnsureOwnership(runtime.Definition.Id, [target]);
         if (IncludesManagedOriginal(target) || File.Exists(target) || Directory.Exists(target)) throw new IOException("已有同名项目。");

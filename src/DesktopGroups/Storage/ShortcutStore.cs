@@ -43,18 +43,24 @@ internal sealed class ShortcutStore
 {
     private readonly AppStorage storage;
     private readonly string desktop;
+    private readonly string publicDesktop;
     private readonly string profileRelative;
     private readonly string storeRelative;
     public ShortcutProfile Profile { get; private set; }
     public IReadOnlyList<StoredShortcut> Active => Profile.Entries.Where(entry => (entry.Phase is "Stored" or "Updating") && Exists(entry, StoredPath(entry))).ToArray();
     public string DesktopPath => desktop;
+    internal string PublicDesktopPath => publicDesktop;
     public string DirectoryPath => storage.Resolve(storeRelative);
     public event Action? Changed;
 
-    public ShortcutStore(AppStorage storage, string? desktop = null, string profileRelative = "config/groups/default.json", string storeRelative = "storage/default")
+    public ShortcutStore(AppStorage storage, string? desktop = null, string profileRelative = "config/groups/default.json", string storeRelative = "storage/default", string? publicDesktop = null)
     {
         this.storage = storage;
         this.desktop = Path.TrimEndingDirectorySeparator(Path.GetFullPath(desktop ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)));
+        // Isolated/demo desktops must never gain access to the real shared desktop.
+        publicDesktop ??= this.desktop.Equals(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), StringComparison.OrdinalIgnoreCase)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory) : "";
+        this.publicDesktop = publicDesktop.Length == 0 ? "" : Path.TrimEndingDirectorySeparator(Path.GetFullPath(publicDesktop));
         this.profileRelative = profileRelative;
         this.storeRelative = storeRelative;
         var profile = storage.Resolve(profileRelative);
@@ -95,7 +101,7 @@ internal sealed class ShortcutStore
     public void Save() => storage.WriteJson(profileRelative, Profile);
 
     // The worker uses a separate model. Publishing the result happens on the dispatcher.
-    internal ShortcutStore Detached() => new(storage, desktop, profileRelative, storeRelative);
+    internal ShortcutStore Detached() => new(storage, desktop, profileRelative, storeRelative, publicDesktop);
     internal void Publish(ShortcutProfile result)
     {
         result.X = Profile.X; result.Y = Profile.Y; result.Width = Profile.Width; result.Height = Profile.Height;
@@ -207,7 +213,7 @@ internal sealed class ShortcutStore
         if (Exists(entry.OriginalPath) || Exists(StoredPath(entry))
             || entry.PendingRelative != null && Exists(storage.Resolve(entry.PendingRelative))) return false;
         // The two roots must still be online and readable before absence is accepted.
-        foreach (var root in new[] { desktop, storage.Root })
+        foreach (var root in new[] { Path.GetDirectoryName(entry.OriginalPath)!, storage.Root })
         {
             VerifiedTransfer.ValidatePath(root);
             using var files = Directory.EnumerateFileSystemEntries(root).GetEnumerator();
@@ -444,16 +450,15 @@ internal sealed class ShortcutStore
     }
     private void ValidateOriginal(string path)
     {
-        var commonDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        if (Path.IsPathFullyQualified(path) && commonDesktop.Length > 0
-            && !string.Equals(desktop, commonDesktop, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), commonDesktop, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("此项目位于公共桌面，不能直接收纳。可通过抽屉右键“引用外部文件…”加入，或先移到个人桌面后再收纳。");
-        if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), desktop, StringComparison.OrdinalIgnoreCase))
-            throw new IOException("只收纳个人桌面根目录中的文件。其他位置可以添加引用。");
+        if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), desktop, StringComparison.OrdinalIgnoreCase)
+            && !IsPublicDesktopPath(path))
+            throw new IOException("只收纳个人桌面或公共桌面根目录中的项目。其他位置可以添加引用。");
         _ = DrawerContentSource.Normalize(path);
         VerifiedTransfer.ValidatePath(path);
     }
+
+    internal bool IsPublicDesktopPath(string path) => publicDesktop.Length > 0 && Path.IsPathFullyQualified(path)
+        && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), publicDesktop, StringComparison.OrdinalIgnoreCase);
 
     private static void AssertSourceFile(string path)
     {

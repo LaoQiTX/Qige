@@ -31,7 +31,7 @@ internal sealed record RestoreJournal(string Id, bool HadConfig, bool HadStorage
 
 // Every caller holds the single-instance lock and fences configuration/file mutations.
 // Snapshots never include caches, locks, logs, other backups or external directories.
-internal sealed class BackupService(AppStorage storage, string? desktop = null)
+internal sealed class BackupService(AppStorage storage, string? desktop = null, string? publicDesktop = null)
 {
     private const string JournalPath = "recovery/backup-restore.json";
     private string Desktop => desktop ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
@@ -96,7 +96,7 @@ internal sealed class BackupService(AppStorage storage, string? desktop = null)
     public BackupSummary Create(BackupOptions options, string reason, bool pinned = false)
     {
         ValidateDestination(options.Directory);
-        var catalog = new DrawerCatalog(storage, Desktop);
+        var catalog = new DrawerCatalog(storage, Desktop, publicDesktop);
         if (catalog.Settings.Drawers.Any(d => d.Removing)) throw new IOException("有抽屉尚未完成移除，请处理后再备份。");
         CheckSnapshotCapacity(catalog, options.Directory);
         var id = Guid.NewGuid().ToString("N");
@@ -247,7 +247,7 @@ internal sealed class BackupService(AppStorage storage, string? desktop = null)
             if (!File.Exists(data.Resolve($"config/groups/{drawer.Id}.json"))) throw new IOException("备份缺少抽屉配置。");
             if (drawer.Removing) throw new IOException("备份包含未完成移除的抽屉。");
         }
-        var catalog = new DrawerCatalog(data, Desktop);
+        var catalog = new DrawerCatalog(data, Desktop, publicDesktop);
         foreach (var store in catalog.Stores.Values)
             foreach (var entry in store.Profile.Entries)
                 if (entry.IsDirectory)
@@ -311,7 +311,7 @@ internal sealed class BackupService(AppStorage storage, string? desktop = null)
             foreach (var entry in store.Profile.Entries.Where(existing.Contains)) entry.Phase = "Restored";
             staged.WriteJson($"config/groups/{drawerId}.json", store.Profile);
         }
-        _ = new DrawerCatalog(staged, Desktop);
+        _ = new DrawerCatalog(staged, Desktop, publicDesktop);
         var journal = new RestoreJournal(id, Directory.Exists(storage.Resolve("config")), Directory.Exists(storage.Resolve("storage")), false);
         storage.WriteJson(JournalPath, journal);
         try
@@ -323,7 +323,7 @@ internal sealed class BackupService(AppStorage storage, string? desktop = null)
                 var next = staged.Resolve(name);
                 if (Directory.Exists(next)) Directory.Move(next, current);
             }
-            _ = new DrawerCatalog(storage, Desktop);
+            _ = new DrawerCatalog(storage, Desktop, publicDesktop);
             storage.WriteJson(JournalPath, journal with { Committed = true });
         }
         catch { RecoverInterrupted(storage); throw; }

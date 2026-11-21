@@ -39,8 +39,8 @@ internal sealed partial class StorageWindow
                 reason = CanTransferIntoMapping(runtime, paths) ? null : "mapping-unavailable";
             else if (reason == null)
             {
-                var plan = DesktopInputPlan.Create(runtime.Row.Store, paths);
-                catalog.EnsureOwnership(runtime.Definition.Id, plan.Managed);
+                catalog.EnsureOwnership(runtime.Definition.Id, paths);
+                if (!runtime.Row.Store.CanAccept(paths, out var rejection)) reason = rejection;
             }
         }
         catch (Exception error) when (error is System.IO.IOException or ArgumentException or UnauthorizedAccessException)

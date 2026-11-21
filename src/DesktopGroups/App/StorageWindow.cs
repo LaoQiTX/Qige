@@ -186,7 +186,6 @@ internal sealed partial class StorageWindow : Window
                 return true;
             };
         }
-        else panel.DropEffect = (paths, _, allowed) => DesktopInputPlan.SelectEffect(paths, store.DesktopPath, allowed);
         panel.Configure(definition.Name, store.Profile.Width, store.Profile.Height, store.Profile.Locked);
         panel.RestorePreferences(store.Profile);
         panel.FoldedChanged += folded =>
@@ -529,7 +528,7 @@ internal sealed partial class StorageWindow : Window
     {
         if (demo || Selected == null || Selected.Definition.Kind != DrawerKind.Desktop) return;
         var selection = NativeIconLayout.ReadSelection();
-        if (selection.Count == 0) { Status("先在个人桌面选择文件，再点击收纳。"); return; }
+        if (selection.Count == 0) { Status("先在桌面选择文件，再点击收纳。"); return; }
         QueueAddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray(), "desktop-selection");
     });
     internal bool QueueAddPaths(string id, IReadOnlyList<string> paths, string source = "api", string? operationId = null)
@@ -541,49 +540,26 @@ internal sealed partial class StorageWindow : Window
             Paths = InputDiagnostics.Paths(paths), State = InputState(r) });
         var reason = InputBlockedReason(r);
         if (reason == null && r.Definition.Kind != DrawerKind.Desktop) reason = "not-desktop-drawer";
-        DesktopInputPlan? plan = null;
-        if (reason == null)
-        {
-            try { plan = DesktopInputPlan.Create(r.Row.Store, paths); }
-            catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
-            { reason = error.Message; }
-        }
+        if (reason == null && !r.Row.Store.CanAccept(paths, out var rejection)) reason = rejection;
         if (reason != null)
         {
             inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = reason });
             Status("收纳未接受：" + InputRejectionMessage(reason)); return false;
         }
-        try { catalog.EnsureOwnership(id, plan!.Managed); }
+        try { catalog.EnsureOwnership(id, paths); }
         catch (Exception error)
         {
             inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = "ownership", Error = error.ToString() });
             throw;
         }
-        if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(plan!.Managed, StringComparer.OrdinalIgnoreCase).Any()))
+        if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(paths, StringComparer.OrdinalIgnoreCase).Any()))
         {
             inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = "pending-in-another-drawer" });
             Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false;
         }
-        inputDiagnostics.Write("input.route", new { OperationId = operationId,
-            Managed = InputDiagnostics.Paths(plan!.Managed), References = InputDiagnostics.Paths(plan.References) });
-        if (plan.References.Length > 0)
-        {
-            try { catalog.AddReferences(id, plan.References); }
-            catch (Exception error)
-            {
-                inputDiagnostics.Write("input.completed", new { OperationId = operationId, Success = false, Error = error.ToString() });
-                throw;
-            }
-            inputDiagnostics.Write("input.references-completed", new { OperationId = operationId, Count = plan.References.Length });
-            InvalidateExternalContents(r);
-            Status("公共桌面项目已添加为引用，原件保留在公共桌面。");
-        }
-        if (plan.Managed.Length == 0)
-        {
-            inputDiagnostics.Write("input.completed", new { OperationId = operationId, Success = true, Mode = "reference" });
-            return true;
-        }
-        r.PendingPaths = plan.Managed; r.Paused = false;
+        inputDiagnostics.Write("input.route", new { OperationId = operationId, Mode = "managed",
+            Paths = InputDiagnostics.Paths(paths), PublicDesktop = InputDiagnostics.Paths(paths.Where(r.Row.Store.IsPublicDesktopPath).ToArray()) });
+        r.PendingPaths = paths.ToArray(); r.Paused = false;
         inputDiagnostics.Write("input.queued", new { OperationId = operationId });
         _ = Collect(); return true;
         async Task Collect()
@@ -593,7 +569,7 @@ internal sealed partial class StorageWindow : Window
                 await RunStoreAsync(r, "收纳入口", store =>
                 {
                     var issues = new List<string>();
-                    foreach (var path in plan.Managed)
+                    foreach (var path in paths)
                     {
                         try
                         {
