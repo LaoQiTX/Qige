@@ -6,25 +6,25 @@
         <Border x:Name="FocusRing" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="2,0">
           <Track x:Name="PART_Track" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}">
             <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
-              <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" CornerRadius="1.5" Background="{x:Static local:AppPalette.Accent}" /></ControlTemplate></RepeatButton.Template>
+              <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" CornerRadius="1.5" Background="{DynamicResource PaletteAccent}" /></ControlTemplate></RepeatButton.Template>
             </RepeatButton></Track.DecreaseRepeatButton>
             <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
-              <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" CornerRadius="1.5" Background="{x:Static local:AppPalette.Border}" /></ControlTemplate></RepeatButton.Template>
+              <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="3" CornerRadius="1.5" Background="{DynamicResource PaletteBorder}" /></ControlTemplate></RepeatButton.Template>
             </RepeatButton></Track.IncreaseRepeatButton>
             <Track.Thumb><Thumb Width="16" Height="22" Cursor="Hand">
-              <Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse x:Name="Dot" Width="12" Height="12" Fill="White" Stroke="{x:Static local:AppPalette.Accent}" StrokeThickness="2" />
-                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Dot" Property="Fill" Value="#E6EFFA" /></Trigger>
-                  <Trigger Property="IsDragging" Value="True"><Setter TargetName="Dot" Property="Fill" Value="{x:Static local:AppPalette.Accent}" /></Trigger></ControlTemplate.Triggers>
+              <Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse x:Name="Dot" Width="12" Height="12" Fill="White" Stroke="{DynamicResource PaletteAccent}" StrokeThickness="2" />
+                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Dot" Property="Fill" Value="{DynamicResource PaletteHover}" /></Trigger>
+                  <Trigger Property="IsDragging" Value="True"><Setter TargetName="Dot" Property="Fill" Value="{DynamicResource PaletteAccent}" /></Trigger></ControlTemplate.Triggers>
               </ControlTemplate></Thumb.Template>
             </Thumb></Track.Thumb>
           </Track>
         </Border>
-        <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="FocusRing" Property="BorderBrush" Value="{x:Static local:AppPalette.Focus}" /></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="FocusRing" Property="Opacity" Value=".6" /></Trigger></ControlTemplate.Triggers>
+        <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="FocusRing" Property="BorderBrush" Value="{DynamicResource PaletteFocus}" /></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="FocusRing" Property="Opacity" Value=".6" /></Trigger></ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="Button">
-      <Setter Property="Foreground" Value="{x:Static local:AppPalette.Text}" />
-      <Setter Property="Background" Value="{x:Static local:AppPalette.Control}" />
+      <Setter Property="Foreground" Value="{DynamicResource PaletteText}" />
+      <Setter Property="Background" Value="{DynamicResource PaletteControl}" />
       <Setter Property="BorderBrush" Value="Transparent" />
       <Setter Property="MinHeight" Value="30" />
       <Setter Property="Padding" Value="12,7" />
@@ -35,19 +35,19 @@
           <ControlTemplate TargetType="Button">
             <Grid>
               <Border x:Name="Frame" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="7" />
-              <Border x:Name="Feedback" CornerRadius="7" IsHitTestVisible="False" />
+              <Border x:Name="Feedback" CornerRadius="7" Background="{DynamicResource PaletteText}" Opacity="0" IsHitTestVisible="False" />
               <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
               <Border x:Name="FocusRing" CornerRadius="6" Margin="2" BorderThickness="1" BorderBrush="{TemplateBinding Foreground}" Visibility="Collapsed" IsHitTestVisible="False" />
             </Grid>
             <ControlTemplate.Triggers>
-              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Feedback" Property="Background" Value="#20396190" /></Trigger>
-              <Trigger Property="IsPressed" Value="True"><Setter TargetName="Feedback" Property="Background" Value="#40396190" /></Trigger>
-              <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{x:Static local:AppPalette.Focus}" /></Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Feedback" Property="Opacity" Value=".09" /></Trigger>
+              <Trigger Property="IsPressed" Value="True"><Setter TargetName="Feedback" Property="Opacity" Value=".17" /></Trigger>
+              <Trigger Property="IsDefaulted" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="{DynamicResource PaletteFocus}" /></Trigger>
               <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusRing" Property="Visibility" Value="Visible" /></Trigger>
               <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="Frame" Property="Background" Value="{x:Static local:AppPalette.Disabled}" />
-                <Setter TargetName="Feedback" Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="{x:Static local:AppPalette.DisabledText}" />
+                <Setter TargetName="Frame" Property="Background" Value="{DynamicResource PaletteDisabled}" />
+                <Setter TargetName="Feedback" Property="Opacity" Value="0" />
+                <Setter Property="Foreground" Value="{DynamicResource PaletteDisabledText}" />
                 <Setter Property="Cursor" Value="Arrow" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -56,16 +56,16 @@
       </Setter>
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-      <Setter Property="Background" Value="{x:Static local:AppPalette.Accent}" />
-      <Setter Property="Foreground" Value="{x:Static local:AppPalette.OnAccent}" />
+      <Setter Property="Background" Value="{DynamicResource PaletteAccent}" />
+      <Setter Property="Foreground" Value="{DynamicResource PaletteOnAccent}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style TargetType="TextBox">
-      <Setter Property="Background" Value="{x:Static local:AppPalette.Surface}" />
-      <Setter Property="Foreground" Value="{x:Static local:AppPalette.Text}" />
-      <Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Border}" />
-      <Setter Property="CaretBrush" Value="{x:Static local:AppPalette.Text}" />
-      <Setter Property="SelectionBrush" Value="{x:Static local:AppPalette.Focus}" />
+      <Setter Property="Background" Value="{DynamicResource PaletteSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource PaletteText}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource PaletteBorder}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource PaletteText}" />
+      <Setter Property="SelectionBrush" Value="{DynamicResource PaletteFocus}" />
       <Setter Property="Padding" Value="9,6" />
       <Setter Property="MinHeight" Value="30" />
       <Setter Property="BorderThickness" Value="1" />
@@ -80,22 +80,22 @@
         </Setter.Value>
       </Setter>
       <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Muted}" /></Trigger>
-        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Focus}" /></Trigger>
-        <Trigger Property="IsReadOnly" Value="True"><Setter Property="Background" Value="{x:Static local:AppPalette.Sidebar}" /></Trigger>
+        <Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource PaletteMuted}" /></Trigger>
+        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource PaletteFocus}" /></Trigger>
+        <Trigger Property="IsReadOnly" Value="True"><Setter Property="Background" Value="{DynamicResource PaletteSidebar}" /></Trigger>
         <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Background" Value="{x:Static local:AppPalette.Disabled}" />
-          <Setter Property="Foreground" Value="{x:Static local:AppPalette.DisabledText}" />
-          <Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Divider}" />
+          <Setter Property="Background" Value="{DynamicResource PaletteDisabled}" />
+          <Setter Property="Foreground" Value="{DynamicResource PaletteDisabledText}" />
+          <Setter Property="BorderBrush" Value="{DynamicResource PaletteDivider}" />
         </Trigger>
         <Trigger Property="local:FormFeedback.HasError" Value="True">
-          <Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Warning}" />
-          <Setter Property="Background" Value="{x:Static local:AppPalette.ErrorSurface}" />
+          <Setter Property="BorderBrush" Value="{DynamicResource PaletteWarning}" />
+          <Setter Property="Background" Value="{DynamicResource PaletteErrorSurface}" />
         </Trigger>
       </Style.Triggers>
     </Style>
     <Style x:Key="InputError" TargetType="TextBlock">
-      <Setter Property="Foreground" Value="{x:Static local:AppPalette.Warning}" />
+      <Setter Property="Foreground" Value="{DynamicResource PaletteWarning}" />
       <Setter Property="FontSize" Value="11" />
       <Setter Property="TextWrapping" Value="Wrap" />
       <Setter Property="Margin" Value="0,6,0,0" />
@@ -118,7 +118,7 @@
                 <Thumb>
                   <Thumb.Template>
                     <ControlTemplate TargetType="Thumb">
-                      <Border Background="{x:Static local:AppPalette.ScrollThumb}" CornerRadius="3" Margin="2,1" />
+                      <Border Background="{DynamicResource PaletteScrollThumb}" CornerRadius="3" Margin="2,1" />
                     </ControlTemplate>
                   </Thumb.Template>
                 </Thumb>
@@ -133,7 +133,7 @@
     </Style>
     <Style TargetType="CheckBox">
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-      <Setter Property="Foreground" Value="{x:Static local:AppPalette.Secondary}" />
+      <Setter Property="Foreground" Value="{DynamicResource PaletteSecondary}" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="Margin" Value="0,0,20,0" />
       <Setter Property="Cursor" Value="Hand" />
@@ -141,24 +141,24 @@
         <Setter.Value>
           <ControlTemplate TargetType="CheckBox">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-              <Border x:Name="Box" Width="14" Height="14" CornerRadius="3" BorderThickness="1" BorderBrush="{x:Static local:AppPalette.Muted}" Background="#FFFFFF" Margin="0,0,7,0">
-                <Path x:Name="Tick" Data="M 2,6 L 5,9 L 10,3" Stroke="#FFFFFF" StrokeThickness="1.6" Visibility="Collapsed" />
+              <Border x:Name="Box" Width="14" Height="14" CornerRadius="3" BorderThickness="1" BorderBrush="{DynamicResource PaletteMuted}" Background="{DynamicResource PaletteOnAccent}" Margin="0,0,7,0">
+                <Path x:Name="Tick" Data="M 2,6 L 5,9 L 10,3" Stroke="{DynamicResource PaletteOnAccent}" StrokeThickness="1.6" Visibility="Collapsed" />
               </Border>
               <ContentPresenter VerticalAlignment="Center" />
             </StackPanel>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Box" Property="Background" Value="{x:Static local:AppPalette.Focus}" />
+                <Setter TargetName="Box" Property="Background" Value="{DynamicResource PaletteFocus}" />
                 <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
               </Trigger>
               <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Box" Property="BorderBrush" Value="{x:Static local:AppPalette.Focus}" /><Setter TargetName="Box" Property="BorderThickness" Value="2" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource PaletteFocus}" /><Setter TargetName="Box" Property="BorderThickness" Value="2" />
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Box" Property="BorderBrush" Value="{x:Static local:AppPalette.Secondary}" />
+                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource PaletteSecondary}" />
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="Box" Property="Opacity" Value=".65" /><Setter Property="Foreground" Value="{x:Static local:AppPalette.DisabledText}" />
+                <Setter TargetName="Box" Property="Opacity" Value=".65" /><Setter Property="Foreground" Value="{DynamicResource PaletteDisabledText}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>

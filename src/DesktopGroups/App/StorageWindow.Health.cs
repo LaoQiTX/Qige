@@ -303,7 +303,8 @@ internal sealed partial class StorageWindow
     private void OpenLogsClick(object sender, RoutedEventArgs e) => Try(() =>
     { var path = storage.Resolve("logs"); Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); });
 
-    private async Task<bool> RunStoreAsync(DrawerRuntime runtime, string operation, Func<ShortcutStore, IReadOnlyList<string>> action, bool duringExit = false)
+    private async Task<bool> RunStoreAsync(DrawerRuntime runtime, string operation, Func<ShortcutStore, IReadOnlyList<string>> action,
+        bool duringExit = false, string? inputOperationId = null)
     {
         if ((closing || maintenanceBusy || exitAfterOperations) && !duringExit) return false;
         if (runtime.Busy || disposed) { Status("此抽屉仍有操作进行中，请稍后重试。"); return false; }
@@ -324,9 +325,16 @@ internal sealed partial class StorageWindow
             Issues(runtime, result.issues); success = result.issues.Count == 0;
             if (success) Status(operation + "完成。");
         }
-        catch (Exception e) { Issues(runtime, [e.Message]); }
+        catch (Exception e)
+        {
+            inputDiagnostics.Write("store.error", new { OperationId = inputOperationId, Drawer = runtime.Definition.Id, operation, Error = e.ToString() });
+            Issues(runtime, [e.Message]);
+        }
         finally
         {
+            // Exit can dispose the logger as soon as BusyOperations reaches zero.
+            if (inputOperationId != null)
+                inputDiagnostics.Write("input.completed", new { OperationId = inputOperationId, Success = success, runtime.Issue });
             runtime.Busy = false; RefreshHealthText();
             if (exitAfterOperations && BusyOperations == 0 && !restoringExit && !disposed) { exitAfterOperations = false; RequestExit(); }
         }

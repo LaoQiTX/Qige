@@ -73,21 +73,24 @@ internal sealed class ShortcutStore
 
     internal static bool Exists(StoredShortcut entry, string path) => entry.IsDirectory ? Directory.Exists(path) : File.Exists(path);
     public string StoredPath(StoredShortcut entry) => storage.Resolve(entry.StoredRelative);
-    public bool CanAccept(IReadOnlyList<string> paths)
+    public bool CanAccept(IReadOnlyList<string> paths) => CanAccept(paths, out _);
+    internal bool CanAccept(IReadOnlyList<string> paths, out string reason)
     {
-        if (paths.Count == 0) return false;
+        reason = "";
+        if (paths.Count == 0) { reason = "没有可收纳的文件路径。"; return false; }
         try
         {
             foreach (var path in paths)
             {
                 ValidateOriginal(path);
                 var directory = AssertSource(Path.GetFullPath(path));
-                if (directory && MappedFileOperations.IsAtOrInside(storage.Root, path)) return false;
+                if (directory && MappedFileOperations.IsAtOrInside(storage.Root, path))
+                { reason = "不能收纳包含栖格数据的目录。"; return false; }
             }
             return true;
         }
-        catch (IOException) { return false; }
-        catch (ArgumentException) { return false; } catch (UnauthorizedAccessException) { return false; }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+        { reason = error.Message; return false; }
     }
     public void Save() => storage.WriteJson(profileRelative, Profile);
 
@@ -441,6 +444,11 @@ internal sealed class ShortcutStore
     }
     private void ValidateOriginal(string path)
     {
+        var commonDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        if (Path.IsPathFullyQualified(path) && commonDesktop.Length > 0
+            && !string.Equals(desktop, commonDesktop, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), commonDesktop, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("此项目位于公共桌面，不能直接收纳。可通过抽屉右键“引用外部文件…”加入，或先移到个人桌面后再收纳。");
         if (!Path.IsPathFullyQualified(path) || !string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), desktop, StringComparison.OrdinalIgnoreCase))
             throw new IOException("只收纳个人桌面根目录中的文件。其他位置可以添加引用。");
         _ = DrawerContentSource.Normalize(path);

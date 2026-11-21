@@ -14,6 +14,8 @@ internal static class Program
             storage = new AppStorage(Path.Combine(storage.Root, "runs", Guid.NewGuid().ToString("N")));
             storage.EnsureWritable();
             storage.ConfigureTemporaryDirectory();
+            if (args.Contains("--input-test")) return InputDiagnosticsChecks.Run(storage);
+            if (args.Contains("--input-exit-test")) return InputDiagnosticsChecks.Run(storage, checkExit: true);
             var crossVolume = Array.IndexOf(args, "--cross-volume-test");
             if (crossVolume >= 0 && crossVolume + 1 < args.Length) return BasicContentChecks.CrossVolume(storage, args[crossVolume + 1]);
             if (args.Contains("--recycle-test"))

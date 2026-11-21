@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [string]$Version = '1.1.0-beta.1',
+    [string]$Version = '1.1.0-beta.1-diag.2',
     [switch]$FrameworkDependent,
     [switch]$Installer,
     [string]$InnoSetupCompiler

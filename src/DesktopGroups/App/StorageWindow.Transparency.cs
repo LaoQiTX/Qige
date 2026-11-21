@@ -16,7 +16,12 @@ internal sealed partial class StorageWindow
         menu.Resources.MergedDictionaries.Add(drawerItemMenuResources ??= new ResourceDictionary
             { Source = new Uri("/Qige;component/App/DrawerItemMenu.xaml", UriKind.Relative) });
         menu.Style = (Style)menu.FindResource(typeof(ContextMenu));
-        menu.Opened += (_, _) => DrawerMenuAppearance.Apply(menu, anchor == null ? runtime.Panel.Transparency : 0);
+        menu.Opened += (_, _) =>
+        {
+            themedOpenMenu = menu;
+            DrawerMenuAppearance.Apply(menu, anchor == null ? runtime.Panel.Transparency : 0);
+        };
+        menu.Closed += (_, _) => { if (themedOpenMenu == menu) themedOpenMenu = null; };
         return menu;
     }
 
@@ -24,9 +29,14 @@ internal sealed partial class StorageWindow
     {
         var panel = new StackPanel { MinWidth = 172 };
         var heading = new Grid();
-        heading.Children.Add(new TextBlock { Text = "背景透明度", Foreground = AppPalette.Text, FontSize = 12 });
-        var value = new TextBlock { Text = $"{runtime.Panel.Transparency}%", HorizontalAlignment = HorizontalAlignment.Right,
-            Foreground = AppPalette.Secondary, FontSize = 12 };
+        TextBlock Label(string text, string brush, double size, HorizontalAlignment alignment = HorizontalAlignment.Left)
+        {
+            var label = new TextBlock { Text = text, FontSize = size, HorizontalAlignment = alignment };
+            label.SetResourceReference(TextBlock.ForegroundProperty, brush);
+            return label;
+        }
+        heading.Children.Add(Label("背景透明度", "PaletteText", 12));
+        var value = Label($"{runtime.Panel.Transparency}%", "PaletteSecondary", 12, HorizontalAlignment.Right);
         heading.Children.Add(value); panel.Children.Add(heading);
         var slider = new Slider { Minimum = 0, Maximum = DrawerAppearance.MaxTransparency,
             Value = runtime.Panel.Transparency, TickFrequency = 1, IsSnapToTickEnabled = true,
@@ -35,9 +45,8 @@ internal sealed partial class StorageWindow
         System.Windows.Automation.AutomationProperties.SetName(slider, "抽屉背景透明度，0% 不透明，80% 更通透");
         panel.Children.Add(slider);
         var endpoints = new Grid();
-        endpoints.Children.Add(new TextBlock { Text = "0% 不透明", FontSize = 10, Foreground = AppPalette.Muted });
-        endpoints.Children.Add(new TextBlock { Text = "80% 更通透", FontSize = 10, Foreground = AppPalette.Muted,
-            HorizontalAlignment = HorizontalAlignment.Right });
+        endpoints.Children.Add(Label("0% 不透明", "PaletteMuted", 10));
+        endpoints.Children.Add(Label("80% 更通透", "PaletteMuted", 10, HorizontalAlignment.Right));
         panel.Children.Add(endpoints);
 
         void Commit() => Try(() =>

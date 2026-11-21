@@ -190,6 +190,7 @@ internal sealed partial class StorageWindow
             watcher?.Dispose(); watcher = null;
             foreach (var r in runtimes.Values) r.Panel.Dispose();
             runtimes.Clear(); rows.Clear(); catalog = restored;
+            ApplyTheme();
             foreach (var definition in catalog.Settings.Drawers) AddRuntime(definition);
         }
         finally { initializing = false; }

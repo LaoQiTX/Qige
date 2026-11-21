@@ -35,11 +35,24 @@ internal sealed partial class StorageWindow : Window
     internal DrawerCatalog Catalog => catalog;
     internal IReadOnlyList<ShortcutPanel> Panels => runtimes.Values.Select(r => r.Panel).ToArray();
 
-    public StorageWindow(AppStorage storage, bool demo = false, bool background = false)
+    public StorageWindow(AppStorage storage, bool demo = false, bool background = false, Func<bool>? systemDark = null)
     {
         this.demo = demo; this.background = background;
+        readSystemDark = systemDark ?? AppPalette.ReadSystemDark;
         this.storage = demo ? new AppStorage(storage.Resolve($"samples/manager-{Guid.NewGuid():N}")) : storage;
         this.storage.EnsureWritable();
+        inputDiagnostics = new InputDiagnostics(this.storage);
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            inputDiagnostics.Write("session.start", new { Version = AppBrand.Version,
+                OS = Environment.OSVersion.VersionString, Runtime = Environment.Version.ToString(),
+                Is64Bit = Environment.Is64BitProcess, Elevated = new System.Security.Principal.WindowsPrincipal(identity)
+                    .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator), demo,
+                Desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                PublicDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory) });
+        }
+        catch (Exception error) { inputDiagnostics.Write("session.start-error", new { Error = error.ToString() }); }
         string? sampleDesktop = null;
         if (demo)
         {
@@ -49,7 +62,9 @@ internal sealed partial class StorageWindow : Window
         catalog = new DrawerCatalog(this.storage, sampleDesktop);
         if (demo) SeedDemo(sampleDesktop!);
         if (!demo) startup = new StartupRegistration(storage);
+        ApplyTheme();
         InitializeComponent();
+        InitializeAppearance();
         InitializeHealth();
         InitializeBackups();
         Title = demo ? "栖格 Qige · 管理面板样例" : $"栖格 Qige · 抽屉管理 · {AppBrand.Version}";
@@ -61,11 +76,6 @@ internal sealed partial class StorageWindow : Window
         SnapBox.IsChecked = catalog.Settings.SnapEnabled;
         StartupBox.IsEnabled = !demo; AddSelectedButton.IsEnabled = !demo;
         Overview.Selected += SelectDrawer;
-        SourceInitialized += (_, _) =>
-        {
-            var dark = 0;
-            DwmSetWindowAttribute(new WindowInteropHelper(this).Handle, 20, ref dark, sizeof(int));
-        };
         Loaded += (_, _) => Initialize();
         syncTimer.Tick += (_, _) => Synchronize();
         desktopTimer.Tick += (_, _) => DesktopTick();
@@ -119,6 +129,7 @@ internal sealed partial class StorageWindow : Window
             }
             tray = new ResidentTray(storage.Root, TrayAction);
             tray.EnvironmentChanged += SignalEnvironment;
+            tray.ThemeChanged += OnThemeMessage;
             foreach (var drawer in catalog.Settings.Drawers.ToArray())
                 AddRuntime(drawer);
             initializing = false;
@@ -148,14 +159,8 @@ internal sealed partial class StorageWindow : Window
         var row = new DrawerRow(definition, store);
         DrawerRuntime? runtime = null;
         var panel = new ShortcutPanel(Status, (_, _) => { if (runtime != null) SaveLayout(runtime); },
-            paths => definition.Kind == DrawerKind.Desktop && !demo && QueueAddPaths(definition.Id, paths),
-            paths =>
-            {
-                if (closing || maintenanceBusy || demo || definition.Removing || runtime?.Busy != false) return false;
-                if (definition.Kind == DrawerKind.FolderMapping) return CanTransferIntoMapping(runtime, paths);
-                try { catalog.EnsureOwnership(definition.Id, paths); return store.CanAccept(paths); }
-                catch (Exception exception) when (exception is IOException or ArgumentException) { return false; }
-            },
+            paths => definition.Kind == DrawerKind.Desktop && !demo && QueueAddPaths(definition.Id, paths, "ole", runtime?.Panel.DropOperationId),
+            paths => runtime != null && CanAcceptPanelInput(runtime, paths),
             path =>
             {
                 if (demo) { Status("样例内容仅在样例目录内使用。"); return; }
@@ -167,12 +172,13 @@ internal sealed partial class StorageWindow : Window
                 if (runtime != null) _ = RunStoreAsync(runtime, "归还桌面并解除分组", copy => { copy.ReturnAndUngroup(path); return []; });
             });
         runtime = new DrawerRuntime(definition, row, panel);
+        panel.InputDiagnostic = (stage, detail) => inputDiagnostics.Write(stage, new { Drawer = definition.Id, Detail = detail });
         panel.OpenItem = OpenContent;
         panel.ReorderItem = (path, index) => ReorderDesktopContent(definition.Id, path, index);
         panel.DropOnAnotherPanel = (path, point) => DropBetweenDrawers(runtime, path, point);
         if (definition.Kind == DrawerKind.FolderMapping)
         {
-            panel.MappedDropEffect = (paths, keys, allowed) => PickMappedDropEffect(runtime, paths, keys, allowed);
+            panel.DropEffect = (paths, keys, allowed) => PickMappedDropEffect(runtime, paths, keys, allowed);
             panel.MappedDrop = (paths, effect) =>
             {
                 if (!CanTransferIntoMapping(runtime, paths)) return false;
@@ -180,6 +186,7 @@ internal sealed partial class StorageWindow : Window
                 return true;
             };
         }
+        else panel.DropEffect = (paths, _, allowed) => DesktopInputPlan.SelectEffect(paths, store.DesktopPath, allowed);
         panel.Configure(definition.Name, store.Profile.Width, store.Profile.Height, store.Profile.Locked);
         panel.RestorePreferences(store.Profile);
         panel.FoldedChanged += folded =>
@@ -523,25 +530,86 @@ internal sealed partial class StorageWindow : Window
         if (demo || Selected == null || Selected.Definition.Kind != DrawerKind.Desktop) return;
         var selection = NativeIconLayout.ReadSelection();
         if (selection.Count == 0) { Status("先在个人桌面选择文件，再点击收纳。"); return; }
-        QueueAddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray());
+        QueueAddPaths(Selected.Id, selection.Select(i => i.Identity).ToArray(), "desktop-selection");
     });
-    internal bool QueueAddPaths(string id, IReadOnlyList<string> paths)
+    internal bool QueueAddPaths(string id, IReadOnlyList<string> paths, string source = "api", string? operationId = null)
     {
         var r = runtimes[id];
-        if (closing || maintenanceBusy || exitAfterOperations || r.Busy || !r.Panel.IsAttached || r.Definition.Removing || r.Definition.Kind != DrawerKind.Desktop || !r.Row.Store.CanAccept(paths)) return false;
-        catalog.EnsureOwnership(id, paths);
-        if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(paths, StringComparer.OrdinalIgnoreCase).Any()))
-        { Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false; }
-        r.PendingPaths = paths.ToArray(); r.Paused = false;
+        operationId ??= Guid.NewGuid().ToString("N");
+        paths = paths.ToArray();
+        inputDiagnostics.Write("input.request", new { OperationId = operationId, Drawer = id, Source = source,
+            Paths = InputDiagnostics.Paths(paths), State = InputState(r) });
+        var reason = InputBlockedReason(r);
+        if (reason == null && r.Definition.Kind != DrawerKind.Desktop) reason = "not-desktop-drawer";
+        DesktopInputPlan? plan = null;
+        if (reason == null)
+        {
+            try { plan = DesktopInputPlan.Create(r.Row.Store, paths); }
+            catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
+            { reason = error.Message; }
+        }
+        if (reason != null)
+        {
+            inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = reason });
+            Status("收纳未接受：" + InputRejectionMessage(reason)); return false;
+        }
+        try { catalog.EnsureOwnership(id, plan!.Managed); }
+        catch (Exception error)
+        {
+            inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = "ownership", Error = error.ToString() });
+            throw;
+        }
+        if (runtimes.Values.Any(other => other != r && other.PendingPaths.Intersect(plan!.Managed, StringComparer.OrdinalIgnoreCase).Any()))
+        {
+            inputDiagnostics.Write("input.rejected", new { OperationId = operationId, Reason = "pending-in-another-drawer" });
+            Status("其中有入口正由另一个抽屉收纳，请稍后重试。"); return false;
+        }
+        inputDiagnostics.Write("input.route", new { OperationId = operationId,
+            Managed = InputDiagnostics.Paths(plan!.Managed), References = InputDiagnostics.Paths(plan.References) });
+        if (plan.References.Length > 0)
+        {
+            try { catalog.AddReferences(id, plan.References); }
+            catch (Exception error)
+            {
+                inputDiagnostics.Write("input.completed", new { OperationId = operationId, Success = false, Error = error.ToString() });
+                throw;
+            }
+            inputDiagnostics.Write("input.references-completed", new { OperationId = operationId, Count = plan.References.Length });
+            InvalidateExternalContents(r);
+            Status("公共桌面项目已添加为引用，原件保留在公共桌面。");
+        }
+        if (plan.Managed.Length == 0)
+        {
+            inputDiagnostics.Write("input.completed", new { OperationId = operationId, Success = true, Mode = "reference" });
+            return true;
+        }
+        r.PendingPaths = plan.Managed; r.Paused = false;
+        inputDiagnostics.Write("input.queued", new { OperationId = operationId });
         _ = Collect(); return true;
         async Task Collect()
         {
-            try { await RunStoreAsync(r, "收纳入口", store =>
+            try
             {
-                var issues = new List<string>();
-                foreach (var path in paths) { try { store.Add(path); } catch (Exception e) { issues.Add(Path.GetFileName(path) + "：" + e.Message); } }
-                return issues;
-            }); }
+                await RunStoreAsync(r, "收纳入口", store =>
+                {
+                    var issues = new List<string>();
+                    foreach (var path in plan.Managed)
+                    {
+                        try
+                        {
+                            store.Add(path);
+                            inputDiagnostics.Write("input.file-completed", new { OperationId = operationId, Path = path });
+                        }
+                        catch (Exception e)
+                        {
+                            inputDiagnostics.Write("input.file-error", new { OperationId = operationId, Path = path,
+                                HResult = $"0x{e.HResult:X8}", Error = e.ToString() });
+                            issues.Add(Path.GetFileName(path) + "：" + e.Message);
+                        }
+                    }
+                    return issues;
+                }, inputOperationId: operationId);
+            }
             finally { r.PendingPaths = []; }
         }
     }
@@ -659,9 +727,12 @@ internal sealed partial class StorageWindow : Window
     private void DisposeRuntime()
     {
         if (disposed) return;
+        pendingThemeRefresh?.Abort();
         DisposeHealth();
         watcher?.Dispose(); foreach (var r in runtimes.Values) r.Panel.Dispose();
         guides.Dispose(); tray?.Dispose(); Application.Current.SessionEnding -= OnSessionEnding;
+        inputDiagnostics.Write("session.end", new { });
+        inputDiagnostics.Dispose();
     }
     private sealed class DrawerRuntime(DrawerDefinition definition, DrawerRow row, ShortcutPanel panel)
     {
@@ -676,6 +747,5 @@ internal sealed partial class StorageWindow : Window
         public int ExternalGeneration;
         public ExternalContent[] ExternalItems = [];
     }
-    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
 }

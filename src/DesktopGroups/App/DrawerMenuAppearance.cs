@@ -13,15 +13,21 @@ internal static class DrawerMenuAppearance
     public static Brush? GetSubmenuBackground(DependencyObject target) => (Brush?)target.GetValue(SubmenuBackgroundProperty);
     public static void SetSubmenuBackground(DependencyObject target, Brush value) => target.SetValue(SubmenuBackgroundProperty, value);
 
+    private static readonly DependencyProperty TransparencyProperty = DependencyProperty.RegisterAttached(
+        "Transparency", typeof(int), typeof(DrawerMenuAppearance), new PropertyMetadata(0));
+
+    internal static void Refresh(ContextMenu menu) => Apply(menu, (int)menu.GetValue(TransparencyProperty));
+
     internal static void Apply(ContextMenu menu, int transparency)
     {
-        menu.Background = DrawerAppearance.MenuSurface(transparency, 1);
+        menu.SetValue(TransparencyProperty, transparency);
+        menu.Background = DrawerAppearance.Current.MenuSurface(transparency, 1);
         ApplyChildren(menu.Items, transparency, 2);
     }
 
     private static void ApplyChildren(ItemCollection items, int transparency, int depth)
     {
-        var background = DrawerAppearance.MenuSurface(transparency, depth);
+        var background = DrawerAppearance.Current.MenuSurface(transparency, depth);
         foreach (var item in items.OfType<MenuItem>())
         {
             SetSubmenuBackground(item, background);

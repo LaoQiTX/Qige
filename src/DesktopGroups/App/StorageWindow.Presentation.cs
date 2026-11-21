@@ -272,16 +272,23 @@ internal sealed partial class StorageWindow
     {
         if (ModalLayer.Visibility != Visibility.Visible) modalReturnFocus = Keyboard.FocusedElement;
         CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = NewWebsiteBox.Visibility = Visibility.Collapsed;
+        modalTransition++;
+        activeMaterialOverlay = box;
+        ModalLayer.IsHitTestVisible = true;
         ModalLayer.Visibility = box.Visibility = Visibility.Visible;
+        AnimateMaterialOverlay(box);
         KeyboardNavigation.SetTabNavigation(box, KeyboardNavigationMode.Cycle);
         box.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
     }
     private void DismissModal()
     {
+        modalTransition++;
+        activeMaterialOverlay = null;
+        ModalLayer.IsHitTestVisible = true;
         ModalLayer.Visibility = CreateBox.Visibility = SettingsBox.Visibility = CloseBox.Visibility = PreferenceSyncBox.Visibility = NewWebsiteBox.Visibility = Visibility.Collapsed;
         if (modalReturnFocus != null) Keyboard.Focus(modalReturnFocus);
     }
-    private void DismissModalClick(object sender, RoutedEventArgs e) => DismissModal();
+    private void DismissModalClick(object sender, RoutedEventArgs e) => DismissMaterialOverlay();
     private void ClosePanelClick(object sender, RoutedEventArgs e) => ShowModal(CloseBox);
     private void MinimizeClick(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(this);
     private void MaximizeClick(object sender, RoutedEventArgs e)

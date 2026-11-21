@@ -322,7 +322,7 @@ internal static class StoragePanelCheck
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern nint SendMessage(nint window, uint message, nint wParam, nint lParam);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ReleaseCapture();
 
-    private static int ReadEffect(IDataObject data, string name)
+    internal static int ReadEffect(IDataObject data, string name)
     {
         var format = new FORMATETC { cfFormat = unchecked((short)RegisterClipboardFormat(name)), dwAspect = DVASPECT.DVASPECT_CONTENT, lindex = -1, tymed = TYMED.TYMED_HGLOBAL };
         data.GetData(ref format, out var medium);
@@ -342,7 +342,7 @@ internal static class StoragePanelCheck
 
     // Use the Shell's real data object, including its optimized-move receipts.
     // WPF's standalone DataObject does not implement native IDataObject.SetData.
-    private sealed class ShellSampleData : IDisposable
+    internal sealed class ShellSampleData : IDisposable
     {
         public IDataObject Data { get; }
         public ShellSampleData(string path)

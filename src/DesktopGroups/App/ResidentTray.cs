@@ -22,6 +22,7 @@ internal sealed class ResidentTray : IDisposable
     public nint Handle => source.Handle;
     public int RegistrationCount { get; private set; }
     public event Action<string>? EnvironmentChanged;
+    public event Action<int, nint>? ThemeChanged;
 
     public ResidentTray(string root, Action<TrayCommand> command)
     {
@@ -56,6 +57,7 @@ internal sealed class ResidentTray : IDisposable
 
     private nint Hook(nint window, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message is 0x001A or 0x007E or 0x031A or 0x031E) ThemeChanged?.Invoke(message, wParam);
         if ((uint)message == taskbarCreated)
         {
             Available = false; EnsureAvailable(); EnvironmentChanged?.Invoke("Explorer 重建");

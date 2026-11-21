@@ -98,21 +98,19 @@ internal sealed partial class StorageWindow
     private void AddDesktopFiles(DrawerRuntime runtime)
     {
         if (runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing) return;
-        var picker = new OpenFileDialog { Title = "选择个人桌面的文件", InitialDirectory = runtime.Row.Store.DesktopPath,
+        var picker = new OpenFileDialog { Title = "选择桌面文件（公共桌面项目按引用添加）", InitialDirectory = runtime.Row.Store.DesktopPath,
             Filter = "所有文件 (*.*)|*.*", Multiselect = true, DereferenceLinks = false };
         ShowControl();
         if (picker.ShowDialog(this) != true) return;
-        if (!runtime.Row.Store.CanAccept(picker.FileNames)) { Status("请选择个人桌面根目录中的文件。其他位置可添加引用。"); return; }
-        Try(() => QueueAddPaths(runtime.Definition.Id, picker.FileNames));
+        Try(() => QueueAddPaths(runtime.Definition.Id, picker.FileNames, "file-picker"));
     }
     private void PickManagedFolder(DrawerRuntime runtime)
     {
         if (demo || runtime.Definition.Kind != DrawerKind.Desktop || runtime.Busy || maintenanceBusy || closing || exitAfterOperations) return;
         ShowControl();
-        var picker = new OpenFolderDialog { Title = "选择个人桌面上的文件夹", InitialDirectory = runtime.Row.Store.DesktopPath, Multiselect = true };
+        var picker = new OpenFolderDialog { Title = "选择桌面文件夹（公共桌面项目按引用添加）", InitialDirectory = runtime.Row.Store.DesktopPath, Multiselect = true };
         if (picker.ShowDialog(this) != true) return;
-        if (!QueueAddPaths(runtime.Definition.Id, picker.FolderNames))
-            Status("只收纳个人桌面根目录中的文件夹。其他目录可以映射或引用。");
+        QueueAddPaths(runtime.Definition.Id, picker.FolderNames, "folder-picker");
     }
 
     private async Task RefreshDrawerContentsAsync(DrawerRuntime runtime)

@@ -53,9 +53,10 @@ internal static class DrawerLayoutChecks
         reopened = new DrawerCatalog(storage, desktop);
         Check(reopened.Settings.Drawers.Single(d => d.Id == work.Id).Removing, "interrupted removal stays pending instead of recollecting");
         File.Move(first.OriginalPath, storage.Resolve("kept-conflict.url"));
-        Check(reopened.Remove(work.Id).Count == 0 && File.Exists(first.OriginalPath)
+        var retryIssues = reopened.Remove(work.Id);
+        Check(retryIssues.Count == 0 && File.Exists(first.OriginalPath)
             && File.Exists(storage.Resolve($"recovery/removed-drawers/{work.Id}.json")),
-            "retry completes restoration and archives recovery history before removing the drawer");
+            "retry completes restoration and archives recovery history before removing the drawer: " + string.Join("; ", retryIssues));
         Check(new DrawerCatalog(storage, desktop).Settings.Drawers.All(d => d.Id != work.Id), "removed drawers do not reappear after restart");
         Check(reopened.Remove("default").Count == 0 && new DrawerCatalog(storage, desktop).Settings.Drawers.Count == 0,
             "removing the final drawer persists the empty state without recreating a default");

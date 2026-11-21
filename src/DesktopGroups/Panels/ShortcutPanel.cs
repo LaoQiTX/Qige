@@ -69,6 +69,12 @@ internal sealed class ShortcutPanel : IDisposable
     public event Action? InteractionEnded;
     public event Action<string>? ItemMenuRequested;
     internal bool InteractionBlocked { get; set; }
+    internal Action<string, object>? InputDiagnostic { get; set; }
+    internal string? DropOperationId => dropTarget?.OperationId;
+    private void TraceInput(string stage, object detail)
+    {
+        try { InputDiagnostic?.Invoke(stage, detail); } catch { }
+    }
     public bool LayoutLocked => layoutLocked;
     public double LogicalWidth => logicalWidth;
     public double LogicalHeight => logicalHeight;
@@ -111,7 +117,7 @@ internal sealed class ShortcutPanel : IDisposable
     internal Action<string>? OpenItem { get; set; }
     internal Func<string, int, bool>? ReorderItem { get; set; }
     internal Func<string, NativeDesktop.Point, bool>? DropOnAnotherPanel { get; set; }
-    internal Func<IReadOnlyList<string>, uint, uint, uint>? MappedDropEffect { get; set; }
+    internal Func<IReadOnlyList<string>, uint, uint, uint>? DropEffect { get; set; }
     internal Func<IReadOnlyList<string>, uint, bool>? MappedDrop { get; set; }
     internal bool IsAtPoint(NativeDesktop.Point point) => IsAttached && WindowFromPoint(point) == Handle;
 
@@ -168,7 +174,7 @@ internal sealed class ShortcutPanel : IDisposable
         }
         if (!recreate)
         {
-            if (scaleChanged || sizeChanged || directionChanged) Render();
+            if (scaleChanged || sizeChanged || directionChanged || (movedPosition && DrawerAppearance.Current.UsesWallpaper(Transparency))) Render();
             DesktopAttachment.Place(Handle, X, SurfaceY, Width, Height);
             if (movedPosition || sizeChanged || scaleChanged) moved(X, Y);
             return false;
@@ -181,10 +187,23 @@ internal sealed class ShortcutPanel : IDisposable
         {
             Render();
             DesktopAttachment.Place(Handle, X, SurfaceY, Width, Height);
-            if (!oleInitialized) { Marshal.ThrowExceptionForHR(OleInitialize(0)); oleInitialized = true; }
-            dropTarget = new PanelDropTarget(paths => !InteractionBlocked && this.canAccept(paths),                 paths => !InteractionBlocked && this.dropped(paths), SetFileDrag, report, MappedDropEffect,
-                MappedDrop is { } mapped ? (paths, effect) => !InteractionBlocked && mapped(paths, effect) : null);
-            Marshal.ThrowExceptionForHR(RegisterDragDrop(Handle, dropTarget));
+            if (!oleInitialized)
+            {
+                var result = OleInitialize(0);
+                TraceInput("ole.initialize", new { HResult = $"0x{result:X8}", Thread = Environment.CurrentManagedThreadId });
+                Marshal.ThrowExceptionForHR(result); oleInitialized = true;
+            }
+            dropTarget = new PanelDropTarget(paths =>
+            {
+                if (!InteractionBlocked) return this.canAccept(paths);
+                TraceInput("input.rejected", new { OperationId = DropOperationId, Reason = "interaction-blocked" });
+                return false;
+            }, paths => !InteractionBlocked && this.dropped(paths), SetFileDrag, report, DropEffect,
+                MappedDrop is { } mapped ? (paths, effect) => !InteractionBlocked && mapped(paths, effect) : null,
+                TraceInput);
+            var registration = RegisterDragDrop(Handle, dropTarget);
+            TraceInput("ole.register", new { HResult = $"0x{registration:X8}", Window = $"0x{Handle:X}", Host = $"0x{host:X}", X, Y, Width, Height });
+            Marshal.ThrowExceptionForHR(registration);
             dropRegistered = true;
             AttachmentCount++;
             if (movedPosition || sizeChanged || scaleChanged) moved(X, Y);
@@ -324,32 +343,35 @@ internal sealed class ShortcutPanel : IDisposable
         {
             drawing.PushTransform(new ScaleTransform(scale, scale));
             var height = logicalHeight;
-            drawing.DrawRoundedRectangle(DrawerAppearance.Surface(Transparency), new Pen(DrawerAppearance.Edge, 1),
-                new Rect(.5, .5, logicalWidth - 1, height - 1), 12, 12);
-            drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.InnerEdge, 1),
-                new Rect(1.5, 1.5, logicalWidth - 3, height - 3), 11, 11);
+            var bounds = new Rect(.5, .5, logicalWidth - 1, height - 1);
+            var origin = screenPosition ?? new NativeDesktop.Point { X = X, Y = Y };
+            if (expandsUpward) origin.Y -= FullHeight - (int)Math.Round(46 * scale);
+            DrawerAppearance.Current.DrawSurface(drawing, bounds, new Rect(origin.X, origin.Y, Width, FullHeight), Transparency);
+            drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Current.Edge, 1), bounds, DrawerAppearance.Radius, DrawerAppearance.Radius);
+            drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Current.InnerEdge, 1),
+                new Rect(1.5, 1.5, logicalWidth - 3, height - 3), DrawerAppearance.Radius - 1, DrawerAppearance.Radius - 1);
             var titleY = expandsUpward ? height - 46 : 0;
-            Text(drawing, title, 20, titleY + 13, 13, DrawerAppearance.Text.Color,
+            Text(drawing, title, 20, titleY + 13, 13, DrawerAppearance.Current.Text.Color,
                 Math.Max(60, logicalWidth - 109), 22, FontWeights.SemiBold);
             DrawHeaderControls(drawing, titleY);
             if (IsExpanded)
-                drawing.DrawLine(new Pen(DrawerAppearance.Divider, 1),
+                drawing.DrawLine(new Pen(DrawerAppearance.Current.Divider, 1),
                     new Point(18, expandsUpward ? titleY : 45), new Point(logicalWidth - 18, expandsUpward ? titleY : 45));
             drawing.PushClip(new RectangleGeometry(new Rect(10, expandsUpward ? 8 : 49, logicalWidth - 20, height - 57)));
             if (items.Count == 0)
             {
                 var center = logicalWidth / 2;
-                var emptyPen = new Pen(DrawerAppearance.Muted, 1.35) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
-                drawing.DrawRoundedRectangle(DrawerAppearance.Hover, null, new Rect(center - 18, BodyTop + 6, 36, 36), 10, 10);
+                var emptyPen = new Pen(DrawerAppearance.Current.Muted, 1.35) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                drawing.DrawRoundedRectangle(DrawerAppearance.Current.Hover, null, new Rect(center - 18, BodyTop + 6, 36, 36), 10, 10);
                 drawing.DrawLine(emptyPen, new Point(center - 9, BodyTop + 21), new Point(center - 9, BodyTop + 30));
                 drawing.DrawLine(emptyPen, new Point(center - 9, BodyTop + 30), new Point(center + 9, BodyTop + 30));
                 drawing.DrawLine(emptyPen, new Point(center + 9, BodyTop + 30), new Point(center + 9, BodyTop + 21));
                 drawing.DrawLine(emptyPen, new Point(center, BodyTop + 15), new Point(center, BodyTop + 24));
                 drawing.DrawLine(emptyPen, new Point(center - 3, BodyTop + 21), new Point(center, BodyTop + 24));
                 drawing.DrawLine(emptyPen, new Point(center, BodyTop + 24), new Point(center + 3, BodyTop + 21));
-                Text(drawing, "拖入文件，开始整理", 20, BodyTop + 49, 13, DrawerAppearance.Text.Color,
+                Text(drawing, "拖入文件，开始整理", 20, BodyTop + 49, 13, DrawerAppearance.Current.Text.Color,
                     logicalWidth - 40, 22, FontWeights.Medium, TextAlignment.Center);
-                Text(drawing, "也可以右键添加文件或文件夹", 20, BodyTop + 74, 11, DrawerAppearance.Muted.Color,
+                Text(drawing, "也可以右键添加文件或文件夹", 20, BodyTop + 74, 11, DrawerAppearance.Current.Muted.Color,
                     logicalWidth - 40, 24, alignment: TextAlignment.Center);
             }
             for (var index = 0; index < items.Count; index++)
@@ -358,29 +380,29 @@ internal sealed class ShortcutPanel : IDisposable
                 var top = BodyTop + index / Columns * RowHeight - scrollOffset;
                 if (top + RowHeight - 6 < (expandsUpward ? 8 : 49) || top > height - (expandsUpward ? 49 : 8)) continue;
                 var cell = new Rect(left, top, CellWidth - 4, RowHeight - 6);
-                if (index == selected) drawing.DrawRoundedRectangle(DrawerAppearance.Selected, new Pen(DrawerAppearance.SelectedEdge, 1), cell, 9, 9);
-                else if (index == hovered) drawing.DrawRoundedRectangle(DrawerAppearance.Hover, new Pen(DrawerAppearance.HoverEdge, 1), cell, 9, 9);
+                if (index == selected) drawing.DrawRoundedRectangle(DrawerAppearance.Current.Selected, new Pen(DrawerAppearance.Current.SelectedEdge, 1), cell, 9, 9);
+                else if (index == hovered) drawing.DrawRoundedRectangle(DrawerAppearance.Current.Hover, new Pen(DrawerAppearance.Current.HoverEdge, 1), cell, 9, 9);
                 var center = left + (CellWidth - 4) / 2;
                 if (items[index].Icon is { } icon) drawing.DrawImage(icon, new Rect(center - 20, top + 7, 40, 40));
-                else drawing.DrawRoundedRectangle(DrawerAppearance.Placeholder, null, new Rect(center - 16, top + 11, 32, 32), 7, 7);
-                Text(drawing, items[index].Name, left + 4, top + 53, 11, DrawerAppearance.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
+                else drawing.DrawRoundedRectangle(DrawerAppearance.Current.Placeholder, null, new Rect(center - 16, top + 11, 32, 32), 7, 7);
+                Text(drawing, items[index].Name, left + 4, top + 53, 11, DrawerAppearance.Current.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
             }
             drawing.Pop();
             if (MaxScroll > 0)
             {
                 var track = height - 64;
                 var thumb = Math.Max(24, track * track / (track + MaxScroll));
-                drawing.DrawRoundedRectangle(DrawerAppearance.Scroll, null,
+                drawing.DrawRoundedRectangle(DrawerAppearance.Current.Scroll, null,
                     new Rect(logicalWidth - 8, (expandsUpward ? 8 : 54) + scrollOffset / MaxScroll * (track - thumb), 3, thumb), 1.5, 1.5);
             }
             if (!layoutLocked && IsExpanded)
             {
-                var grip = new Pen(DrawerAppearance.Scroll, 1) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                var grip = new Pen(DrawerAppearance.Current.Scroll, 1) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
                 drawing.DrawLine(grip, new Point(logicalWidth - 16, height - 8), new Point(logicalWidth - 8, height - 16));
                 drawing.DrawLine(grip, new Point(logicalWidth - 12, height - 8), new Point(logicalWidth - 8, height - 12));
             }
-            if (highlighted) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Accent, 2), new Rect(1, 1, logicalWidth - 2, height - 2), 11, 11);
-            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.SelectedEdge, 1.5), new Rect(2, 2, logicalWidth - 4, height - 4), 10, 10);
+            if (highlighted) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Current.Accent, 2), new Rect(1, 1, logicalWidth - 2, height - 2), DrawerAppearance.Radius - 1, DrawerAppearance.Radius - 1);
+            if (fileDrag) drawing.DrawRoundedRectangle(null, new Pen(DrawerAppearance.Current.SelectedEdge, 1.5), new Rect(2, 2, logicalWidth - 4, height - 4), DrawerAppearance.Radius - 2, DrawerAppearance.Radius - 2);
             drawing.Pop();
         }
         var bitmap = new RenderTargetBitmap(Width, FullHeight, 96, 96, PixelFormats.Pbgra32);
@@ -402,16 +424,16 @@ internal sealed class ShortcutPanel : IDisposable
         {
             var center = logicalWidth - (control == 1 ? 62 : 22);
             if (headerHovered == control)
-                drawing.DrawRoundedRectangle(DrawerAppearance.Hover, new Pen(DrawerAppearance.HoverEdge, 1),
+                drawing.DrawRoundedRectangle(DrawerAppearance.Current.Hover, new Pen(DrawerAppearance.Current.HoverEdge, 1),
                     new Rect(center - 16, top + 7, 32, 32), 8, 8);
             if (control == 1)
             {
                 for (var dot = -1; dot <= 1; dot++)
-                    drawing.DrawEllipse(DrawerAppearance.Secondary, null, new Point(center + dot * 5, top + 23), 1.25, 1.25);
+                    drawing.DrawEllipse(DrawerAppearance.Current.Secondary, null, new Point(center + dot * 5, top + 23), 1.25, 1.25);
             }
             else
             {
-                var pen = new Pen(DrawerAppearance.Secondary, 1.4) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                var pen = new Pen(DrawerAppearance.Current.Secondary, 1.4) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
                 var direction = IsExpanded == expandsUpward ? 1 : -1;
                 drawing.DrawLine(pen, new Point(center - 4, top + 23 - direction * 2), new Point(center, top + 23 + direction * 2));
                 drawing.DrawLine(pen, new Point(center, top + 23 + direction * 2), new Point(center + 4, top + 23 - direction * 2));
@@ -470,7 +492,7 @@ internal sealed class ShortcutPanel : IDisposable
             // clipped bottom edge without rerendering text/icons on every frame.
             if (Height < FullHeight)
             {
-                var radius = (int)Math.Round(12 * scale);
+                var radius = (int)Math.Round(DrawerAppearance.Radius * scale);
                 for (var row = 0; row < radius; row++)
                     for (var column = 0; column < radius; column++)
                     {
@@ -772,7 +794,10 @@ internal sealed class ShortcutPanel : IDisposable
     private void CommitLayout()
     {
         InteractionEnded?.Invoke();
-        EnsureAttached(true); moved(X, Y); LayoutCommitted?.Invoke(); UpdateHoverAfterMove();
+        var before = SurfaceBuilds;
+        EnsureAttached(true);
+        if (SurfaceBuilds == before && DrawerAppearance.Current.UsesWallpaper(Transparency)) Render();
+        moved(X, Y); LayoutCommitted?.Invoke(); UpdateHoverAfterMove();
     }
 
     internal bool IsDesktopAt(NativeDesktop.Point point)
@@ -869,7 +894,12 @@ internal sealed class ShortcutPanel : IDisposable
         animationTimer.Stop(); gestureTimer.Stop();
         if (pressedItem >= 0) CancelIconGesture();
         if (dragging || resizeEdges != 0 || scrolling) { dragging = false; resizeEdges = 0; scrolling = false; ReleaseCapture(); InteractionEnded?.Invoke(); }
-        if (dropRegistered) { RevokeDragDrop(Handle); dropRegistered = false; }
+        if (dropRegistered)
+        {
+            var result = RevokeDragDrop(Handle);
+            TraceInput("ole.revoke", new { HResult = $"0x{result:X8}", Window = $"0x{Handle:X}" });
+            dropRegistered = false;
+        }
         dropTarget = null;
         if (Handle != 0) { var handle = Handle; Handle = 0; Instances.Remove(handle); if (destroy && IsWindow(handle)) DestroyWindow(handle); }
         fileDrag = tracking = suppressHoverUntilLeave = false; if (!manualExpansion) hoveringOpen = false; hovered = -1;

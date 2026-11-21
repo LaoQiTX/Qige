@@ -19,6 +19,8 @@ internal sealed class DrawerSettings
 {
     public int Version { get; set; } = 1;
     public bool SnapEnabled { get; set; } = true;
+    public AppTheme Theme { get; set; }
+    public ColorMode ColorMode { get; set; }
     public string? SelectedId { get; set; }
     public List<DrawerDefinition> Drawers { get; set; } = [];
 }
@@ -36,6 +38,8 @@ internal sealed class DrawerCatalog
         var path = storage.Resolve("config/drawers.json");
         Settings = File.Exists(path) ? JsonSerializer.Deserialize<DrawerSettings>(File.ReadAllText(path))
             ?? throw new IOException("抽屉列表无法读取。") : new();
+        if (!Enum.IsDefined(Settings.Theme)) Settings.Theme = AppTheme.Mica;
+        if (!Enum.IsDefined(Settings.ColorMode)) Settings.ColorMode = ColorMode.System;
         if (Settings.Version is not (1 or 2)) throw new IOException("抽屉列表版本不支持。");
         if (!File.Exists(path))
         {

@@ -149,7 +149,11 @@ internal sealed partial class StorageWindow
 
     private async Task TransferIntoMappingAsync(DrawerRuntime runtime, IReadOnlyList<string> paths, Func<string, bool> chooseMove)
     {
-        if (!CanTransferIntoMapping(runtime, paths)) return;
+        var operationId = runtime.Panel.DropOperationId ?? Guid.NewGuid().ToString("N");
+        inputDiagnostics.Write("mapping.request", new { OperationId = operationId, Drawer = runtime.Definition.Id,
+            Paths = InputDiagnostics.Paths(paths), State = InputState(runtime) });
+        if (!CanTransferIntoMapping(runtime, paths))
+        { inputDiagnostics.Write("mapping.rejected", new { OperationId = operationId, Reason = "mapping-unavailable" }); return; }
         var directory = runtime.Definition.MappedPath!;
         var copySources = runtimes.Values.Where(drawer => drawer.Definition.Kind == DrawerKind.Desktop && !drawer.Busy)
             .SelectMany(drawer => drawer.Row.Store.Active.Select(drawer.Row.Store.StoredPath))
@@ -178,10 +182,18 @@ internal sealed partial class StorageWindow
                             throw new IOException("此项目包含已分组的桌面文件，请先解除原分组。");
                         files.Transfer(operation.Path, directory, operation.Move, cancellation.Token, allowManagedCopy: copySources.Contains(operation.Path));
                         completed++;
+                        inputDiagnostics.Write("mapping.file-completed", new { OperationId = operationId, operation.Path, operation.Move, destination });
                     }
                     catch (OperationCanceledException) { break; }
-                    catch (Exception error) { issues.Add($"{Path.GetFileName(operation.Path)}：{error.Message}"); }
+                    catch (Exception error)
+                    {
+                        inputDiagnostics.Write("mapping.file-error", new { OperationId = operationId, operation.Path,
+                            operation.Move, HResult = $"0x{error.HResult:X8}", Error = error.ToString() });
+                        issues.Add($"{Path.GetFileName(operation.Path)}：{error.Message}");
+                    }
                 }
+                inputDiagnostics.Write("mapping.completed", new { OperationId = operationId, completed,
+                    Count = operations.Length, Cancelled = cancellation.IsCancellationRequested, Issues = issues.ToArray() });
                 return $"已完成 {completed}/{operations.Length} 项" + (cancellation.IsCancellationRequested ? "，传输已取消" : "")
                     + (issues.Count > 0 ? "。" + string.Join("；", issues) : "。");
             });
@@ -195,7 +207,11 @@ internal sealed partial class StorageWindow
         runtime.Busy = true;
         RefreshHealthText();
         try { Status(await fileWorker.Run(operation)); }
-        catch (Exception error) { Status($"{label}失败：{error.Message}"); }
+        catch (Exception error)
+        {
+            inputDiagnostics.Write("mapping.error", new { Drawer = runtime.Definition.Id, label, Error = error.ToString() });
+            Status($"{label}失败：{error.Message}");
+        }
         finally
         {
             runtime.Busy = false;
@@ -319,7 +335,7 @@ internal sealed partial class StorageWindow
         if (paths.Length == 0) return;
         if (runtime.Row.Store.CanAccept(paths))
         {
-            if (!QueueAddPaths(runtime.Definition.Id, paths)) Status("暂时无法收纳剪贴板中的桌面项目。");
+            QueueAddPaths(runtime.Definition.Id, paths, "clipboard");
             return;
         }
         if (demo) return;
@@ -388,9 +404,12 @@ internal sealed partial class StorageWindow
         {
             Title = title, Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ResizeMode = ResizeMode.NoResize, SizeToContent = SizeToContent.WidthAndHeight, ShowInTaskbar = false,
-            Background = AppPalette.Surface, Foreground = AppPalette.Text, FontFamily = FontFamily,
+            FontFamily = FontFamily,
             FontSize = FontSize, UseLayoutRounding = true
         };
+        dialog.SetResourceReference(BackgroundProperty, "PaletteSurface");
+        dialog.SetResourceReference(ForegroundProperty, "PaletteText");
+        dialog.SourceInitialized += (_, _) => ApplyCaptionTheme(dialog);
         dialog.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Qige;component/App/SharedControls.xaml", UriKind.Relative) });
         var input = new TextBox { Text = initial };
         System.Windows.Automation.AutomationProperties.SetName(input, "文件或文件夹名称");

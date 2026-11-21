@@ -4,7 +4,7 @@ using System.Windows;
 
 namespace DesktopGroups;
 
-internal enum SettingsSection { General, Recovery, About }
+internal enum SettingsSection { General, Appearance, Recovery, About }
 
 internal sealed partial class StorageWindow
 {
@@ -26,15 +26,18 @@ internal sealed partial class StorageWindow
         SelectSettingsSection(section);
         ShowModal(SettingsBox);
         (section == SettingsSection.General ? GeneralSettingsTab
+            : section == SettingsSection.Appearance ? AppearanceSettingsTab
             : section == SettingsSection.Recovery ? RecoverySettingsTab : AboutSettingsTab).Focus();
     }
 
     private void SelectSettingsSection(SettingsSection section)
     {
         GeneralSettingsPage.Visibility = section == SettingsSection.General ? Visibility.Visible : Visibility.Collapsed;
+        AppearanceSettingsPage.Visibility = section == SettingsSection.Appearance ? Visibility.Visible : Visibility.Collapsed;
         RecoverySettingsPage.Visibility = section == SettingsSection.Recovery ? Visibility.Visible : Visibility.Collapsed;
         AboutSettingsPage.Visibility = section == SettingsSection.About ? Visibility.Visible : Visibility.Collapsed;
         GeneralSettingsTab.IsChecked = section == SettingsSection.General;
+        AppearanceSettingsTab.IsChecked = section == SettingsSection.Appearance;
         RecoverySettingsTab.IsChecked = section == SettingsSection.Recovery;
         AboutSettingsTab.IsChecked = section == SettingsSection.About;
         SettingsScroll.ScrollToTop();
@@ -43,6 +46,7 @@ internal sealed partial class StorageWindow
 
     private void SettingsClick(object sender, RoutedEventArgs e) => ShowSettings();
     private void GeneralSettingsClick(object sender, RoutedEventArgs e) => SelectSettingsSection(SettingsSection.General);
+    private void AppearanceSettingsClick(object sender, RoutedEventArgs e) => SelectSettingsSection(SettingsSection.Appearance);
     private void RecoverySettingsClick(object sender, RoutedEventArgs e) => SelectSettingsSection(SettingsSection.Recovery);
     private void AboutSettingsClick(object sender, RoutedEventArgs e) => SelectSettingsSection(SettingsSection.About);
 

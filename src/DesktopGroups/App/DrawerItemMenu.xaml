@@ -39,9 +39,9 @@
   <Style TargetType="ContextMenu">
     <Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI" />
     <Setter Property="FontSize" Value="12" />
-    <Setter Property="Foreground" Value="#243449" />
-    <Setter Property="Background" Value="#FCFDFE" />
-    <Setter Property="BorderBrush" Value="{x:Static local:AppPalette.Border}" />
+    <Setter Property="Foreground" Value="{DynamicResource PaletteText}" />
+    <Setter Property="Background" Value="{DynamicResource PaletteSurface}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource PaletteBorder}" />
     <Setter Property="Padding" Value="5" />
     <Setter Property="Width" Value="276" />
     <Setter Property="MaxHeight" Value="520" />
@@ -61,7 +61,7 @@
     </Setter>
   </Style>
   <Style TargetType="MenuItem">
-    <Setter Property="Foreground" Value="#34465D" />
+    <Setter Property="Foreground" Value="{DynamicResource PaletteSecondary}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Padding" Value="10,7" />
     <Setter Property="MinHeight" Value="34" />
@@ -75,14 +75,14 @@
               <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="18" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="14" /></Grid.ColumnDefinitions>
                 <ContentPresenter x:Name="ItemIcon" ContentSource="Icon" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                <TextBlock x:Name="Check" Text="✓" Visibility="Collapsed" Foreground="#2E5F98" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBlock x:Name="Check" Text="✓" Visibility="Collapsed" Foreground="{DynamicResource PaletteAccent}" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" Margin="10,0,8,0" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{x:Static local:AppPalette.Muted}" FontSize="10" VerticalAlignment="Center" />
-                <Path x:Name="Arrow" Grid.Column="3" Visibility="Collapsed" Data="M 0,0 L 3,3 L 0,6" Stroke="{x:Static local:AppPalette.Secondary}" StrokeThickness="1.2" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource PaletteMuted}" FontSize="10" VerticalAlignment="Center" />
+                <Path x:Name="Arrow" Grid.Column="3" Visibility="Collapsed" Data="M 0,0 L 3,3 L 0,6" Stroke="{DynamicResource PaletteSecondary}" StrokeThickness="1.2" VerticalAlignment="Center" HorizontalAlignment="Right" />
               </Grid>
             </Border>
             <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsSubmenuOpen}" Placement="Right" PlacementTarget="{Binding ElementName=ItemSurface}" HorizontalOffset="-3" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
-              <Border x:Name="SubmenuSurface" Margin="7" Padding="5" MinWidth="202" Background="{Binding Path=(local:DrawerMenuAppearance.SubmenuBackground), RelativeSource={RelativeSource TemplatedParent}}" BorderBrush="{x:Static local:AppPalette.Border}" BorderThickness="1" CornerRadius="9">
+              <Border x:Name="SubmenuSurface" Margin="7" Padding="5" MinWidth="202" Background="{Binding Path=(local:DrawerMenuAppearance.SubmenuBackground), RelativeSource={RelativeSource TemplatedParent}}" BorderBrush="{DynamicResource PaletteBorder}" BorderThickness="1" CornerRadius="9">
                 <Border.Effect><DropShadowEffect Color="#23334A" BlurRadius="12" ShadowDepth="2" Opacity=".12" /></Border.Effect>
                 <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle" /></ScrollViewer>
               </Border>
@@ -90,11 +90,11 @@
           </Grid>
           <ControlTemplate.Triggers>
             <Trigger Property="HasItems" Value="True"><Setter TargetName="Arrow" Property="Visibility" Value="Visible" /></Trigger>
-            <Trigger Property="IsChecked" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{x:Static local:AppPalette.Selected}" /><Setter TargetName="Check" Property="Visibility" Value="Visible" /><Setter TargetName="ItemIcon" Property="Visibility" Value="Hidden" /></Trigger>
-            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{x:Static local:AppPalette.Hover}" /><Setter Property="Foreground" Value="{x:Static local:AppPalette.Text}" /></Trigger>
-            <Trigger Property="IsSubmenuOpen" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{x:Static local:AppPalette.Hover}" /></Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ItemSurface" Property="BorderBrush" Value="{x:Static local:AppPalette.Focus}" /><Setter TargetName="ItemSurface" Property="Background" Value="{x:Static local:AppPalette.Hover}" /></Trigger>
-            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{x:Static local:AppPalette.DisabledText}" /><Setter TargetName="ItemSurface" Property="Background" Value="Transparent" /></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource PaletteSelected}" /><Setter TargetName="Check" Property="Visibility" Value="Visible" /><Setter TargetName="ItemIcon" Property="Visibility" Value="Hidden" /></Trigger>
+            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource PaletteHover}" /><Setter Property="Foreground" Value="{DynamicResource PaletteText}" /></Trigger>
+            <Trigger Property="IsSubmenuOpen" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource PaletteHover}" /></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ItemSurface" Property="BorderBrush" Value="{DynamicResource PaletteFocus}" /><Setter TargetName="ItemSurface" Property="Background" Value="{DynamicResource PaletteHover}" /></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource PaletteDisabledText}" /><Setter TargetName="ItemSurface" Property="Background" Value="Transparent" /></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
@@ -105,12 +105,12 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="MenuItem">
-          <Border BorderBrush="{x:Static local:AppPalette.Divider}" BorderThickness="0,0,0,1" Margin="7,1,7,5" Padding="4,9,4,11">
+          <Border BorderBrush="{DynamicResource PaletteDivider}" BorderThickness="0,0,0,1" Margin="7,1,7,5" Padding="4,9,4,11">
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="3" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-              <Border Background="{x:Static local:AppPalette.Accent}" CornerRadius="1" Margin="0,2,0,2" />
+              <Border Background="{DynamicResource PaletteAccent}" CornerRadius="1" Margin="0,2,0,2" />
               <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                <TextBlock Text="{TemplateBinding InputGestureText}" FontSize="10" Foreground="{x:Static local:AppPalette.Muted}" Margin="0,0,0,4" />
-                <TextBlock Text="{TemplateBinding Header}" FontSize="13" FontWeight="SemiBold" Foreground="{x:Static local:AppPalette.Text}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{TemplateBinding InputGestureText}" FontSize="10" Foreground="{DynamicResource PaletteMuted}" Margin="0,0,0,4" />
+                <TextBlock Text="{TemplateBinding Header}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource PaletteText}" TextTrimming="CharacterEllipsis" />
               </StackPanel>
             </Grid>
           </Border>
@@ -118,5 +118,5 @@
       </Setter.Value>
     </Setter>
   </Style>
-  <Style TargetType="Separator"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Background="{x:Static local:AppPalette.Divider}" Margin="11,5" /></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="Separator"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Background="{DynamicResource PaletteDivider}" Margin="11,5" /></ControlTemplate></Setter.Value></Setter></Style>
 </ResourceDictionary>

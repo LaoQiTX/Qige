@@ -117,7 +117,16 @@ internal sealed partial class StorageWindow
             if (picker.ShowDialog(this) != true) return;
             paths = picker.FileNames;
         }
-        catalog.AddReferences(runtime.Definition.Id, paths);
+        var operationId = Guid.NewGuid().ToString("N");
+        inputDiagnostics.Write("reference.request", new { OperationId = operationId, Drawer = runtime.Definition.Id,
+            Source = directories ? "reference-folder-picker" : "reference-file-picker", Paths = InputDiagnostics.Paths(paths), State = InputState(runtime) });
+        try { catalog.AddReferences(runtime.Definition.Id, paths); }
+        catch (Exception error)
+        {
+            inputDiagnostics.Write("reference.error", new { OperationId = operationId, Error = error.ToString() });
+            throw;
+        }
+        inputDiagnostics.Write("reference.completed", new { OperationId = operationId });
         InvalidateExternalContents(runtime);
         Status("引用已添加，文件保留在原位置。");
     }

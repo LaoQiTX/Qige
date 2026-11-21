@@ -65,7 +65,8 @@ internal static class ManagerChecks
             {
                 var results = new List<string>();
                 void Check(bool pass, string text) { if (!pass) throw new InvalidOperationException(text); results.Add("PASS " + text); }
-                window = new StorageWindow(storage, demo: true, background: true);
+                var systemDark = false;
+                window = new StorageWindow(storage, demo: true, background: true, systemDark: () => systemDark);
                 window.Start();
                 await Task.Delay(500);
                 await window.WaitForIdleAsync();
@@ -85,6 +86,99 @@ internal static class ManagerChecks
                 await Task.Delay(100);
                 Check(window.Panels.SequenceEqual(originalPanels) && window.TrayAvailable,
                     "reopening the manager does not recreate drawers or initialize a second resident session");
+                var windowHandle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                void Choose(string name)
+                {
+                    var choice = (RadioButton)window.FindName(name);
+                    choice.IsChecked = true;
+                    choice.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent, choice));
+                }
+                async Task RefreshLayout()
+                {
+                    await window.Dispatcher.InvokeAsync(window.UpdateLayout, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+                async Task WaitForModalClose()
+                {
+                    var layer = (FrameworkElement)window.FindName("ModalLayer");
+                    if (!layer.IsVisible) return;
+                    var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    DependencyPropertyChangedEventHandler visibilityChanged = (_, _) =>
+                    {
+                        if (!layer.IsVisible) closed.TrySetResult();
+                    };
+                    layer.IsVisibleChanged += visibilityChanged;
+                    try { await closed.Task.WaitAsync(TimeSpan.FromSeconds(3)); }
+                    finally { layer.IsVisibleChanged -= visibilityChanged; }
+                }
+                async Task NotifyThemeChange()
+                {
+                    SendMessage(windowHandle, 0x001A, 0, 0);
+                    await RefreshLayout();
+                }
+                window.ShowSettings(SettingsSection.Appearance);
+                var lightPreview = (Border)((ContentControl)window.FindName("AcrylicLightPreview")).Content;
+                var darkPreview = (Border)((ContentControl)window.FindName("AcrylicDarkPreview")).Content;
+                Check(!Equals(lightPreview.Background, darkPreview.Background)
+                    && window.Catalog.Settings.Theme == AppTheme.Mica && window.Catalog.Settings.ColorMode == ColorMode.System,
+                    "appearance shows both color previews and reads legacy defaults");
+                var originalSurface = AppPalette.Surface;
+                Choose("DarkColorChoice");
+                Check(ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Mica, true)))
+                    && !Equals(AppPalette.Surface.Color, originalSurface.Color), "manual dark mode updates the manager and existing drawers");
+                Choose("AcrylicThemeChoice");
+                Check(window.Catalog.Settings.ColorMode == ColorMode.Dark
+                    && ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Acrylic, true))),
+                    "switching to Acrylic retains manual dark mode");
+                var restoredSettings = new DrawerCatalog(new AppStorage(Path.GetDirectoryName(window.Catalog.Stores["default"].DesktopPath)!),
+                    window.Catalog.Stores["default"].DesktopPath).Settings;
+                Check(restoredSettings.Theme == AppTheme.Acrylic && restoredSettings.ColorMode == ColorMode.Dark,
+                    "reopening the saved catalog restores both appearance choices");
+                await NotifyThemeChange();
+                Check(ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Acrylic, true))),
+                    "Windows light mode leaves manual dark mode active");
+                var darkSurface = AppPalette.Surface;
+                Check(ReferenceEquals(((Border)window.FindName("SettingsBox")).Background, darkSurface),
+                    "the open settings overlay updates with the dark palette");
+                SaveManagerPreview(window, storage.Resolve("appearance-acrylic-dark.png"));
+                window.Panels[0].SavePreview(storage.Resolve("appearance-acrylic-dark-drawer.png"));
+                var previewMenu = new ContextMenu();
+                var previewChild = new MenuItem(); var previewGrandchild = new MenuItem();
+                previewChild.Items.Add(previewGrandchild); previewMenu.Items.Add(previewChild);
+                DrawerMenuAppearance.Apply(previewMenu, 80);
+                var levels = new[] { previewMenu.Background, DrawerMenuAppearance.GetSubmenuBackground(previewChild),
+                    DrawerMenuAppearance.GetSubmenuBackground(previewGrandchild) }.Cast<SolidColorBrush>().Select(b => b.Color.A).ToArray();
+                Check(DrawerAppearance.GlassEnabled ? levels[0] < levels[1] && levels[1] < levels[2] : levels.All(a => a == 255),
+                    "Acrylic menus deepen by popup level or become opaque when Windows transparency is disabled");
+                var mistPanel = window.Panels[0];
+                var mistPixels = mistPanel.InspectPixels();
+                Check(mistPixels.OpaquePixels > 0 && (DrawerAppearance.GlassEnabled ? mistPixels.BodyAlpha < 255 : mistPixels.BodyAlpha == 255),
+                    "Acrylic backdrop preserves opaque icon pixels and respects Windows transparency");
+                Choose("SystemColorChoice");
+                Check(ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Acrylic, false))),
+                    "follow system immediately picks the Windows light palette");
+                await RefreshLayout();
+                Check(ReferenceEquals(((Border)window.FindName("SettingsBox")).Background, AppPalette.Surface)
+                    && ((RadioButton)window.FindName("SystemColorChoice")).IsChecked == true,
+                    "the visible settings overlay switches to light and selects follow system");
+                SaveManagerPreview(window, storage.Resolve("appearance-acrylic-light.png"));
+                systemDark = true;
+                await NotifyThemeChange();
+                Check(ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Acrylic, true)))
+                    && window.Panels.SequenceEqual(originalPanels), "Windows theme changes update existing surfaces while following the system");
+                systemDark = false;
+                Choose("MicaThemeChoice");
+                Check(window.Catalog.Settings.ColorMode == ColorMode.System
+                    && ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Mica, false))),
+                    "switching back to Mica retains follow system mode");
+                Choose("LightColorChoice");
+                systemDark = true;
+                await NotifyThemeChange();
+                Check(ReferenceEquals(DrawerAppearance.Current, DrawerAppearance.For(new(AppTheme.Mica, false))),
+                    "Windows dark mode leaves manual light mode active");
+                systemDark = false;
+                Choose("SystemColorChoice");
+                ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 Check(window.Panels.Count == 2 && window.Panels.All(p => p.IsAttached), "manager attaches both independent demo drawers");
                 Check(((TextBlock)window.FindName("FooterVersionLabel")).Text.Contains(AppBrand.Version), "application version is persistently visible in the manager footer");
                 var menuPanel = window.Panels[0];
@@ -285,7 +379,8 @@ internal static class ManagerChecks
                     && ((TextBlock)window.FindName("WebsiteDrawerLabel")).Text.Contains("常用"), "manager content toolbar creates URLs in an explicitly named drawer");
                 SaveManagerPreview(window, storage.Resolve("manager-new-website.png"));
                 var cancelWebsite = Descendants((DependencyObject)window.FindName("NewWebsiteBox")).OfType<Button>().Single(b => Equals(b.Content, "取消"));
-                cancelWebsite.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); window.SetManagerMode(false);
+                cancelWebsite.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose(); window.SetManagerMode(false);
                 await window.WaitForIdleAsync();
                 var backupService = new BackupService(new AppStorage(Directory.GetParent(window.Catalog.Stores["default"].DesktopPath)!.FullName), window.Catalog.Stores["default"].DesktopPath);
                 var uiBackup = backupService.List(backupService.Options()).First();
@@ -410,6 +505,7 @@ internal static class ManagerChecks
                     "about page exposes optional project and sponsor links without opening a dialog");
                 window.UpdateLayout(); SaveManagerPreview(window, storage.Resolve("manager-settings-about.png"));
                 ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 Check(drawerList.SelectedItem == workRow && ((FrameworkElement)window.FindName("StudioView")).IsVisible,
                     "closing settings preserves the selected drawer and main view");
                 var search = (TextBox)window.FindName("SearchBox");
@@ -449,12 +545,14 @@ internal static class ManagerChecks
                 Check(window.Catalog.Stores["default"].Active.Count == 18 && window.Catalog.Stores["default"].Profile.Entries.All(e => !File.Exists(e.OriginalPath)),
                     "global recollection in settings resumes the same grouped entries");
                 ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 var monitorBox = (ComboBox)window.FindName("CanvasMonitorBox");
                 monitorBox.SelectedIndex = 1;
                 Check(canvasList.Items.Count == 2, "monitor filtering keeps both drawers on their actual display");
                 monitorBox.SelectedIndex = 0; window.UpdateLayout();
                 Check(Descendants(monitorBox).OfType<TextBlock>().Any(t => t.Text == ((ManagerMonitor)monitorBox.SelectedItem).Label),
                     "monitor selector shows its human-readable label instead of the underlying object");
+                window.SelectDrawer("default");
                 var lockBox = (CheckBox)window.FindName("LockBox");
                 lockBox.IsChecked = true; lockBox.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(window.Panels[0].LayoutLocked && !((Button)window.FindName("ApplyLayoutButton")).IsEnabled
@@ -491,6 +589,7 @@ internal static class ManagerChecks
                 SaveManagerPreview(window, storage.Resolve("manager-preference-sync-minimum.png"));
                 window.Width = 1200; window.Height = 780;
                 Click(syncCancel);
+                await WaitForModalClose();
                 Check(!targetStore.Profile.Folded && !targetStore.Profile.Locked && syncModal.Visibility == Visibility.Collapsed,
                     "canceling preference sync leaves target drawers unchanged");
                 Click(syncButton); syncExpansion.IsChecked = syncLock.IsChecked = false; Click(syncConfirm);
@@ -613,6 +712,7 @@ internal static class ManagerChecks
                     && window.BusyOperations == 1 && !targetStore.Profile.Folded && !targetStore.Profile.Locked,
                     "preference sync refuses pending file work before making any target changes");
                 Click(syncCancel);
+                await WaitForModalClose();
                 batchPanel.ApplyScreenLayout(200, 180, 510, 352);
                 await window.WaitForIdleAsync();
                 Check(batchStore.Active.Count == 24 && batchPanel.SurfaceBuilds - builds < 12,
@@ -679,6 +779,7 @@ internal static class ManagerChecks
                 SaveManagerPreview(window, storage.Resolve("manager-settings-recovery-scrolled.png"));
                 var dismissHealth = (Button)window.FindName("CloseSettingsButton");
                 dismissHealth.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 window.Width = 1200; window.Height = 780;
                 File.Delete(item.OriginalPath);
                 await window.RetryProblemAsync(recovery);
@@ -715,6 +816,7 @@ internal static class ManagerChecks
                     && !window.RecoveryProblems.Any(p => p.EntryId == missingEntry.Id),
                     "manager removes missing membership, retains history and clears its recovery warning");
                 ((Button)window.FindName("CloseSettingsButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 Check(!((ItemsControl)window.FindName("StudioContentsList")).Items.Cast<ManagerContent>().Any(c => c.Id == missingEntry.Id)
                     && missingRow.MissingCount == 0 && !missingRow.Summary.Contains("项失效"),
                     "cleanup immediately refreshes Studio rows and the canvas summary without stale missing entries");
@@ -815,6 +917,7 @@ internal static class ManagerChecks
                 close.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 var cancelClose = Descendants((DependencyObject)window.FindName("CloseBox")).OfType<Button>().First(b => Equals(b.Content, "取消"));
                 cancelClose.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                await WaitForModalClose();
                 first.SavePreview(storage.Resolve("drawer-preview.png"));
                 var closingStore = window.Catalog.Stores["default"];
                 var orderDrawer = window.Catalog.Settings.Drawers.Single(drawer => drawer.Id == "default");
@@ -847,6 +950,15 @@ internal static class ManagerChecks
                 Check(!window.IsVisible && File.Exists(pendingPath) && stores.All(s => s.Profile.Entries.All(e =>
                     removedEntries.Any(m => m.Id == e.Id) || File.Exists(e.OriginalPath) && !File.Exists(s.StoredPath(e)))),
                     "exit returns available files and closes despite two externally removed shortcuts: " + ((System.Windows.Controls.TextBlock)window.FindName("StatusLabel")).Text);
+                var inputEvents = Directory.GetFiles(storage.Root, "input-current.jsonl", SearchOption.AllDirectories)
+                    .SelectMany(File.ReadLines).Select(line => System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(line)).ToArray();
+                var exitInput = inputEvents.Last(entry => entry.GetProperty("Stage").GetString() == "input.request");
+                var exitOperationId = exitInput.GetProperty("Detail").GetProperty("OperationId").GetString();
+                Check(inputEvents.Any(entry => entry.GetProperty("Stage").GetString() == "input.completed"
+                    && entry.GetProperty("Detail").GetProperty("OperationId").GetString() == exitOperationId
+                    && entry.GetProperty("Detail").GetProperty("Success").GetBoolean())
+                    && inputEvents.Last().GetProperty("Stage").GetString() == "session.end",
+                    "exit flushes the last queued input result before closing its diagnostic log");
                 Check(removedEntries.All(e => closingStore.Detached().Profile.Entries.Any(m => m.Id == e.Id)),
                     "exit preserves missing-entry recovery metadata rather than silently discarding it");
                 window = null;
