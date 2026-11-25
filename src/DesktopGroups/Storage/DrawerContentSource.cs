@@ -23,11 +23,11 @@ internal static class DrawerContentSource
 {
     private const FileAttributes UnsupportedAttributes = FileAttributes.ReparsePoint | FileAttributes.Offline | FileAttributes.Device;
 
-    public static string DisplayName(string path, bool isDirectory)
+    public static string DisplayName(string path, bool isDirectory, bool showShortcutExtensions = false)
     {
         var name = Path.GetFileName(path);
         if (name.Length == 0) return path;
-        if (!isDirectory && name.Length > 4 && name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+        if (!showShortcutExtensions && !isDirectory && name.Length > 4 && ShortcutInfo.IsShortcut(name))
             return name[..^4];
         return name;
     }

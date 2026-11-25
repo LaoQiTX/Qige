@@ -523,6 +523,12 @@ internal static class ManagerChecks
                     Check(settings.RootElement.GetProperty("SnapEnabled").GetBoolean() == !previousSnap && window.Catalog.Settings.SnapEnabled == !previousSnap,
                         "global snapping remains editable and persists even when no drawer is selected");
                 snapBox.IsChecked = previousSnap; snapBox.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                var extensionsBox = (CheckBox)window.FindName("ShortcutExtensionsBox");
+                Check(extensionsBox.IsChecked == false, "shortcut extensions are hidden by default in general settings");
+                extensionsBox.IsChecked = true; extensionsBox.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                using (var settings = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(demoRoot, "config", "drawers.json"))))
+                    Check(settings.RootElement.GetProperty("ShowShortcutExtensions").GetBoolean(),
+                        "showing shortcut extensions persists even when no drawer is selected");
                 window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, Environment.TickCount, Key.Escape)
                     { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 Check(((FrameworkElement)window.FindName("ModalLayer")).Visibility == Visibility.Collapsed,
@@ -534,6 +540,11 @@ internal static class ManagerChecks
                 settingsButton.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 Check(settingsButton.IsVisible && ((FrameworkElement)window.FindName("GeneralSettingsPage")).IsVisible,
                     "the same settings entry is available from the canvas view");
+                Check(extensionsBox.IsChecked == true && contentList.Items.Cast<ManagerContent>().Any(i => i.Name == "计算器.lnk"),
+                    "opening general settings reflects the saved preference and the existing drawer shows its shortcut extension");
+                extensionsBox.IsChecked = false; extensionsBox.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+                Check(contentList.Items.Cast<ManagerContent>().Any(i => i.Name == "计算器" && Path.GetFileName(i.OriginalPath) == "计算器.lnk"),
+                    "disabling shortcut extensions updates the current drawer immediately without renaming its files");
                 ((RadioButton)window.FindName("RecoverySettingsTab")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
                 await window.WaitForIdleAsync();
                 ((Button)window.FindName("RestoreAllButton")).RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
@@ -674,7 +685,8 @@ internal static class ManagerChecks
                 Check(window.Catalog.Stores["default"].Active.Count == 18, "demo drawer contains more than 12 items");
                 first.ScrollBy(188);
                 Check(first.ScrollOffset > 0, "content scrolls beyond the first visible rows");
-                first.SelectAt(30, 75);
+                var hitScale = first.Width / first.LogicalWidth;
+                first.SelectAt((int)Math.Round(30 * hitScale), (int)Math.Round(75 * hitScale));
                 Check(first.SelectedIndex >= first.Columns, "scrolled hit testing selects the correct underlying item");
                 first.ApplyScreenLayout(180, 160, 620, 440);
                 Check(first.Columns == 7 && first.LogicalHeight == 440, "resizing recomputes columns and expanded height");

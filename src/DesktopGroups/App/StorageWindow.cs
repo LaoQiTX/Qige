@@ -240,6 +240,7 @@ internal sealed partial class StorageWindow : Window
         var rect = runtime.Panel.AnchorBounds; var profile = runtime.Row.Store.Profile;
         profile.X = (int)Math.Round(rect.X); profile.Y = (int)Math.Round(rect.Y);
         profile.Width = runtime.Panel.LogicalWidth; profile.Height = runtime.Panel.LogicalHeight;
+        profile.LayoutReference = DesktopLayout.Capture(profile, DesktopPlacement.Capture());
         if (!runtime.Busy) runtime.Row.Store.Save();
         if (Selected?.Id == runtime.Definition.Id) FillGeometry(runtime);
         RefreshOverview();
@@ -250,7 +251,8 @@ internal sealed partial class StorageWindow : Window
         var active = runtime.Row.Store.Active;
         var activeIds = active.Select(e => e.Id).ToHashSet();
         var signature = string.Join("|", runtime.Row.Store.Profile.Entries.Select(e => e.Id + ":" + e.Phase + ":" + e.StoredRelative + ":" + e.Hash + ":" + activeIds.Contains(e.Id)));
-        signature += "|" + runtime.Definition.Sort + "|" + string.Join("|", runtime.Definition.ManualOrder) + "|" + string.Join("|", runtime.ExternalItems.Select(item => item.IconKey + ":" + item.Available));
+        signature += "|" + catalog.Settings.ShowShortcutExtensions + "|" + runtime.Definition.Sort + "|" + string.Join("|", runtime.Definition.ManualOrder)
+            + "|" + string.Join("|", runtime.ExternalItems.Select(item => item.IconKey + ":" + item.Available));
         if (runtime.ItemsSignature != signature)
         {
             runtime.ItemsSignature = signature;
@@ -287,7 +289,16 @@ internal sealed partial class StorageWindow : Window
             {
                 var p = runtime.Row.Store.Profile;
                 if (force || !runtime.Panel.IsAttached)
-                    runtime.Panel.ApplyScreenLayout(p.X, p.Y, p.Width, p.Height);
+                {
+                    var monitors = DesktopPlacement.Capture();
+                    p.LayoutReference ??= DesktopLayout.Capture(p, monitors);
+                    var placement = DesktopLayout.Resolve(p, monitors);
+                    runtime.Panel.ApplyScreenLayout(placement.X, placement.Y, placement.Width, placement.Height, commit: false);
+                    var rect = runtime.Panel.AnchorBounds;
+                    p.X = (int)Math.Round(rect.X); p.Y = (int)Math.Round(rect.Y);
+                    p.Width = runtime.Panel.LogicalWidth; p.Height = runtime.Panel.LogicalHeight;
+                    if (!runtime.Busy) runtime.Row.Store.Save();
+                }
                 else runtime.Panel.EnsureAttached(false);
                 if (!runtime.Started && !runtime.Definition.Removing)
                 {
@@ -299,6 +310,7 @@ internal sealed partial class StorageWindow : Window
         }
         }
         finally { recoveringLayout = false; }
+        if (force && SelectedRuntime is { } selected && selected.Panel.IsAttached) FillGeometry(selected);
         recoveryPolicy.Complete(!failed && !deferred, DateTimeOffset.UtcNow);
         if (recoveryPolicy.Pending) environmentTimer.Start();
         if (!failed) environmentIssue = "";

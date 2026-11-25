@@ -26,6 +26,7 @@ internal sealed class ShortcutPanel : IDisposable
     private readonly Func<IReadOnlyList<string>, bool> canAccept;
     private readonly Action<string>? returnToDesktop;
     private readonly Func<nint> findHost;
+    private readonly Func<IReadOnlyList<DesktopMonitor>> captureMonitors;
     private readonly DispatcherTimer animationTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(8) };
     private readonly DispatcherTimer gestureTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
     private readonly Stopwatch animationClock = new();
@@ -122,12 +123,14 @@ internal sealed class ShortcutPanel : IDisposable
     internal bool IsAtPoint(NativeDesktop.Point point) => IsAttached && WindowFromPoint(point) == Handle;
 
     public ShortcutPanel(Action<string> report, Action<int, int> moved, Func<IReadOnlyList<string>, bool> dropped,
-        Func<IReadOnlyList<string>, bool>? canAccept = null, Action<string>? returnToDesktop = null, Func<nint>? findHost = null)
+        Func<IReadOnlyList<string>, bool>? canAccept = null, Action<string>? returnToDesktop = null, Func<nint>? findHost = null,
+        Func<IReadOnlyList<DesktopMonitor>>? captureMonitors = null)
     {
         this.report = report; this.moved = moved; this.dropped = dropped;
         this.canAccept = canAccept ?? (paths => paths.Count > 0 && paths.All(path => File.Exists(path) && ShortcutInfo.IsShortcut(path)));
         this.returnToDesktop = returnToDesktop;
         this.findHost = findHost ?? DesktopAttachment.FindIconHost;
+        this.captureMonitors = captureMonitors ?? DesktopPlacement.Capture;
         animationTimer.Tick += (_, _) => AdvanceAnimation();
         gestureTimer.Tick += (_, _) =>
         {
@@ -152,11 +155,12 @@ internal sealed class ShortcutPanel : IDisposable
         host = nextHost;
         var point = screenPosition ?? new NativeDesktop.Point { X = X, Y = Y };
         if (screenPosition == null) ClientToScreen(host, ref point);
-        var placement = DesktopPlacement.Resolve(point.X, point.Y, logicalWidth, logicalHeight, DesktopPlacement.Capture(), folded: folded);
+        var monitors = captureMonitors();
+        var placement = DesktopPlacement.Resolve(point.X, point.Y, logicalWidth, logicalHeight, monitors, folded: folded);
         screenPosition = new NativeDesktop.Point { X = placement.X, Y = placement.Y };
         point = screenPosition.Value;
         DesktopAttachment.ScreenToClient(host, ref point);
-        var monitor = DesktopPlacement.Capture().OrderBy(m => Math.Pow(placement.X - Math.Clamp(placement.X, m.Work.X, m.Work.Right - 1), 2) + Math.Pow(placement.Y - Math.Clamp(placement.Y, m.Work.Y, m.Work.Bottom - 1), 2)).First();
+        var monitor = monitors.OrderBy(m => Math.Pow(placement.X - Math.Clamp(placement.X, m.Work.X, m.Work.Right - 1), 2) + Math.Pow(placement.Y - Math.Clamp(placement.Y, m.Work.Y, m.Work.Bottom - 1), 2)).First();
         var expansion = DesktopPlacement.ExpansionAt(placement.Y, placement.Height, monitor.Work, placement.Dpi);
         if (folded) placement = placement with { Height = expansion.Height };
         var scaleChanged = Math.Abs(scale - placement.Dpi / 96d) > .001;
@@ -288,11 +292,11 @@ internal sealed class ShortcutPanel : IDisposable
         Show(x, y);
     }
 
-    public void ApplyScreenLayout(int x, int y, double width, double height)
+    public void ApplyScreenLayout(int x, int y, double width, double height, bool commit = true)
     {
         Configure(title, width, height, layoutLocked);
         ShowScreen(x, y);
-        LayoutCommitted?.Invoke();
+        if (commit) LayoutCommitted?.Invoke();
     }
 
     public void ScrollBy(double amount)

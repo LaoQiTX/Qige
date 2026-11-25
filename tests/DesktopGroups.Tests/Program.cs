@@ -30,6 +30,7 @@ internal static class Program
             if (args.Contains("--backup-test")) return BackupChecks.Run(storage);
             if (args.Contains("--p0-test")) return P0Checks.Run(storage);
             if (args.Contains("--layout-test")) return DrawerLayoutChecks.Run(storage);
+            if (args.Contains("--display-test")) return DisplayLayoutChecks.Run(storage);
             if (args.Contains("--manager-test")) return ManagerChecks.Run(storage);
             if (args.Contains("--storage-test")) return ShortcutStorageChecks.Run(storage);
             if (args.Contains("--storage-render-test")) return StoragePanelCheck.Run(storage);

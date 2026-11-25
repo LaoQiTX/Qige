@@ -23,6 +23,7 @@ internal sealed partial class StorageWindow
     {
         RefreshStartup(); RefreshBackupControls(); _ = RefreshBackupListAsync();
         SnapBox.IsChecked = catalog.Settings.SnapEnabled;
+        ShortcutExtensionsBox.IsChecked = catalog.Settings.ShowShortcutExtensions;
         SelectSettingsSection(section);
         ShowModal(SettingsBox);
         (section == SettingsSection.General ? GeneralSettingsTab
@@ -43,6 +44,26 @@ internal sealed partial class StorageWindow
         SettingsScroll.ScrollToTop();
         if (section == SettingsSection.Recovery) { RefreshHealthText(); _ = ScanRecoveryAsync(); }
     }
+
+    private string DrawerItemName(string path, bool isDirectory) =>
+        DrawerContentSource.DisplayName(path, isDirectory, catalog.Settings.ShowShortcutExtensions);
+
+    private void ShortcutExtensionsClick(object sender, RoutedEventArgs e) => Try(() =>
+    {
+        var previous = catalog.Settings.ShowShortcutExtensions;
+        var show = ShortcutExtensionsBox.IsChecked == true;
+        if (show == previous) return;
+        catalog.Settings.ShowShortcutExtensions = show;
+        try { catalog.Save(); }
+        catch
+        {
+            catalog.Settings.ShowShortcutExtensions = previous;
+            ShortcutExtensionsBox.IsChecked = previous;
+            throw;
+        }
+        foreach (var runtime in runtimes.Values) RefreshItems(runtime);
+        Status(show ? "已显示快捷方式后缀。" : "已隐藏快捷方式后缀。");
+    });
 
     private void SettingsClick(object sender, RoutedEventArgs e) => ShowSettings();
     private void GeneralSettingsClick(object sender, RoutedEventArgs e) => SelectSettingsSection(SettingsSection.General);

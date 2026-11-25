@@ -833,6 +833,13 @@
                     </Border>
                     <Border Style="{StaticResource Card}">
                       <StackPanel>
+                        <TextBlock Text="抽屉文件名" FontWeight="SemiBold" Margin="0,0,0,14" />
+                        <CheckBox x:Name="ShortcutExtensionsBox" Content="显示快捷方式后缀" Click="ShortcutExtensionsClick" Margin="0" />
+                        <TextBlock Text="默认隐藏 .lnk 和 .url。此设置仅影响显示，不会重命名文件。" Foreground="{DynamicResource PaletteQuiet}" FontSize="11" TextWrapping="Wrap" LineHeight="18" Margin="21,8,0,0" />
+                      </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                      <StackPanel>
                         <TextBlock Text="备份与恢复" FontWeight="SemiBold" Margin="0,0,0,14" />
                         <CheckBox x:Name="AutoBackupBox" Content="自动备份配置与托管内容" Margin="0,0,0,12" />
                         <TextBlock Text="备份目录" FontSize="11" Foreground="{DynamicResource PaletteMuted}" Margin="0,0,0,6" />

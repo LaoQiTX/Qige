@@ -19,6 +19,7 @@ internal sealed class DrawerSettings
 {
     public int Version { get; set; } = 1;
     public bool SnapEnabled { get; set; } = true;
+    public bool ShowShortcutExtensions { get; set; }
     public AppTheme Theme { get; set; }
     public ColorMode ColorMode { get; set; }
     public string? SelectedId { get; set; }

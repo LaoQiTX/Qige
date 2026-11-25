@@ -34,7 +34,7 @@ internal sealed partial class StorageWindow
         }
         var menu = CreateStyledDrawerMenu(runtime);
         itemMenu = menu;
-        var name = DrawerContentSource.DisplayName(entry.OriginalPath, entry.IsDirectory);
+        var name = DrawerItemName(entry.OriginalPath, entry.IsDirectory);
         menu.Items.Add(new MenuItem
         {
             Header = name, InputGestureText = entry.IsDirectory ? "文件夹" : entry.IsOrdinaryFile ? "文件" : "快捷方式", ToolTip = name, IsEnabled = false,

@@ -30,6 +30,7 @@ internal sealed class ShortcutProfile
     public bool Folded { get; set; }
     public double Width { get; set; } = 420;
     public double Height { get; set; } = 352;
+    public DesktopLayoutReference? LayoutReference { get; set; }
     public bool Locked { get; set; }
     public bool ManualExpansion { get; set; }
     public bool ManualCollapsed { get; set; } = true;
@@ -105,6 +106,7 @@ internal sealed class ShortcutStore
     internal void Publish(ShortcutProfile result)
     {
         result.X = Profile.X; result.Y = Profile.Y; result.Width = Profile.Width; result.Height = Profile.Height;
+        result.LayoutReference = Profile.LayoutReference;
         result.Folded = Profile.Folded; result.Locked = Profile.Locked;
         result.ManualExpansion = Profile.ManualExpansion; result.ManualCollapsed = Profile.ManualCollapsed; result.Density = Profile.Density;
         result.Transparency = Profile.Transparency;

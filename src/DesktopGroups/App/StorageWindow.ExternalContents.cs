@@ -167,7 +167,7 @@ internal sealed partial class StorageWindow
 
     private void OpenExternalItemMenu(DrawerRuntime runtime, ExternalContent item)
     {
-        var menu = CreateDrawerActionMenu(runtime, item.Name);
+        var menu = CreateDrawerActionMenu(runtime, DrawerItemName(item.Path, item.IsDirectory));
         if (menu == null) { runtime.Panel.CloseItemMenu(); return; }
         menu.Items.Add(DrawerAction(menu, runtime, "open", "打开", "Open", () =>
         {

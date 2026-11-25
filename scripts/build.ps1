@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [ValidateSet('Build','Test','Probe','SelfTest','ShellTest','RenderTest','VisibilityProbe','StorageTest','StorageRenderTest','IconTest','ResidentTest','Demo','Run','MigrateData','LayoutTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')]
+    [ValidateSet('Build','Test','Probe','SelfTest','ShellTest','RenderTest','VisibilityProbe','StorageTest','StorageRenderTest','IconTest','ResidentTest','Demo','Run','MigrateData','LayoutTest','DisplayTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')]
     [string]$Task = 'Build',
     [ValidateSet('Debug','Release')]
     [string]$Configuration = 'Debug'
@@ -15,7 +15,7 @@ Invoke-ProjectEnvironment {
     $tasks = if ($Task -eq 'Test') { @('SelfTest','StorageTest','LayoutTest','P0Test','BackupTest','BasicContentTest','InputTest') } else { @($Task) }
     foreach ($item in $tasks) {
         $kind = if ($item -in @('Run','Demo')) { 'App' }
-            elseif ($item -in @('SelfTest','StorageTest','StorageRenderTest','IconTest','ResidentTest','LayoutTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')) { 'Tests' }
+            elseif ($item -in @('SelfTest','StorageTest','StorageRenderTest','IconTest','ResidentTest','LayoutTest','DisplayTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')) { 'Tests' }
             else { 'Diagnostics' }
         $folder = switch ($kind) { App { 'src/DesktopGroups' } Tests { 'tests/DesktopGroups.Tests' } Diagnostics { 'tools/DesktopGroups.Diagnostics' } }
         $name = if ($kind -eq 'App') { 'Qige' } else { 'DesktopGroups.' + $kind }
@@ -25,7 +25,7 @@ Invoke-ProjectEnvironment {
         $flags = @{
             Probe='--inspect'; SelfTest='--self-test'; ShellTest='--shell-test'; RenderTest='--render-test'
             VisibilityProbe='--visibility-probe'; StorageTest='--storage-test'; StorageRenderTest='--storage-render-test'
-            LayoutTest='--layout-test'; ManagerTest='--manager-test'; P0Test='--p0-test'; BackupTest='--backup-test'; BasicContentTest='--basic-content-test'; InputTest='--input-test'; InputExitTest='--input-exit-test'; IconTest='--icon-test'; ResidentTest='--resident-test'; Demo='--demo'; MigrateData='--migrate-data'
+            LayoutTest='--layout-test'; DisplayTest='--display-test'; ManagerTest='--manager-test'; P0Test='--p0-test'; BackupTest='--backup-test'; BasicContentTest='--basic-content-test'; InputTest='--input-test'; InputExitTest='--input-exit-test'; IconTest='--icon-test'; ResidentTest='--resident-test'; Demo='--demo'; MigrateData='--migrate-data'
         }
         if ($flags.ContainsKey($item)) { $arguments += $flags[$item] }
         if ($item -eq 'MigrateData') { $arguments += @('--migrate-from', $projectRoot) }

@@ -106,7 +106,7 @@ internal sealed partial class StorageWindow
             if (!syncTimer.IsEnabled) { syncRetries = 0; syncTimer.Start(); }
         }
         var monitors = DesktopPlacement.Capture();
-        var signature = string.Join("|", monitors.Select(m => $"{m.Device}:{m.Work}:{m.Dpi}"));
+        var signature = string.Join("|", monitors.OrderBy(m => m.Device).Select(m => $"{m.Device}:{m.Bounds}:{m.Work}:{m.Dpi}"));
         if (signature != topology) { topology = signature; SignalEnvironment("显示器／缩放变化"); }
         var missing = runtimes.Values.Any(r => !r.Panel.IsAttached);
         if (missing && !recoveryPolicy.Pending) recoveryPolicy.Signal("桌面窗口失效", DateTimeOffset.UtcNow);

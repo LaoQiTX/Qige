@@ -69,7 +69,7 @@ internal sealed partial class StorageWindow
         try
         {
             managerMonitors = Overview.Monitors;
-            var signature = string.Join("|", managerMonitors.Select(m => $"{m.Device}:{m.Work}:{m.Dpi}"));
+            var signature = string.Join("|", managerMonitors.Select(m => $"{m.Device}:{m.Bounds}:{m.Work}:{m.Dpi}"));
             if (monitorSignature != signature || CanvasMonitorBox.Items.Count == 0)
             {
                 monitorSignature = signature;
@@ -167,7 +167,7 @@ internal sealed partial class StorageWindow
             var missing = recoveryProblems.Any(p => p.CanDismiss && p.EntryId == e.Id && p.OriginalPath == e.OriginalPath);
             var state = missing ? "文件已不存在 · 可移除记录" : collected ? "已收纳" : "在桌面／待检查";
             var coordinates = e.OriginalX.HasValue && e.OriginalY.HasValue ? $"原坐标 ({e.OriginalX}, {e.OriginalY})" : "未记录原坐标";
-            return new ManagerContent(e.Id, DrawerContentSource.DisplayName(e.OriginalPath, e.IsDirectory), e.OriginalPath, path,
+            return new ManagerContent(e.Id, DrawerItemName(e.OriginalPath, e.IsDirectory), e.OriginalPath, path,
                 state, $"{state} · {coordinates}", missing ? null : icon, collected && !missing, !missing, missing)
             {
                 ShowOnDesktop = collected && !missing, IconKey = key, Type = e.IsDirectory ? "文件夹" : Path.GetExtension(path), Modified = File.GetLastWriteTimeUtc(path), Size = FileSize(path)
@@ -179,7 +179,7 @@ internal sealed partial class StorageWindow
         {
             iconCache.TryGet(item.IconKey, out var icon);
             var state = item.Kind == DrawerContentKind.Mapped ? "映射目录" : item.Available ? "外部引用" : "引用已失效";
-            return new ManagerContent(item.Id, item.Name, item.Path, item.Path, state, $"{state} · {item.Type}",
+            return new ManagerContent(item.Id, DrawerItemName(item.Path, item.IsDirectory), item.Path, item.Path, state, $"{state} · {item.Type}",
                 icon, false, item.Available)
             {
                 Kind = item.Kind, ShowOnDesktop = item.Available, IconKey = item.IconKey,
@@ -215,7 +215,8 @@ internal sealed partial class StorageWindow
     {
         var query = SearchBox.Text.Trim();
         var contents = currentContents.Where(e => query.Length == 0 || (Selected?.Name.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-            || e.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            || e.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || Path.GetFileName(e.OriginalPath).Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         var runtime = SelectedRuntime;
         var canEdit = runtime is { Busy: false, Definition.Removing: false } && !closing && !maintenanceBusy && !exitAfterOperations;
         var priorSelection = studioSelectionOwner == Selected?.Id

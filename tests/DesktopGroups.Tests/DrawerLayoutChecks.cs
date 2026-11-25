@@ -13,6 +13,18 @@ internal static class DrawerLayoutChecks
             results.Add("PASS " + name);
         }
         var desktop = storage.Resolve("Desktop"); Directory.CreateDirectory(desktop);
+        DisplayLayoutChecks.CheckLayout(Check);
+        Check(System.Text.Json.JsonSerializer.Deserialize<DrawerSettings>("""{"SnapEnabled":false}""") is { ShowShortcutExtensions: false },
+            "existing catalogs without a shortcut extension preference default to hiding it");
+        Check(DrawerContentSource.DisplayName(Path.Combine(desktop, "app.v2.LNK"), false) == "app.v2" &&
+            DrawerContentSource.DisplayName(Path.Combine(desktop, "website.urL"), false) == "website" &&
+            DrawerContentSource.DisplayName(Path.Combine(desktop, "app.v2.LNK"), false, showShortcutExtensions: true) == "app.v2.LNK" &&
+            DrawerContentSource.DisplayName(Path.Combine(desktop, "website.urL"), false, showShortcutExtensions: true) == "website.urL",
+            "Windows and internet shortcut extensions are hidden by default and shown verbatim when enabled");
+        Check(DrawerContentSource.DisplayName(Path.Combine(desktop, "folder.lnk"), true) == "folder.lnk" &&
+            DrawerContentSource.DisplayName(Path.Combine(desktop, "file.txt"), false) == "file.txt" &&
+            DrawerContentSource.DisplayName(Path.Combine(desktop, ".url"), false) == ".url",
+            "the shortcut display preference does not alter directories, ordinary files, or leave an empty name");
         var legacy = new ShortcutStore(storage, desktop);
         var original = Path.Combine(desktop, "旧分组.url");
         File.WriteAllText(original, "[InternetShortcut]\r\nURL=https://example.com/legacy\r\n");
@@ -37,9 +49,19 @@ internal static class DrawerLayoutChecks
         Check(refused, "the same desktop entry cannot belong to two drawers");
         store.Profile.X = -1200; store.Profile.Y = 180; store.Profile.Width = 616; store.Profile.Height = 448;
         store.Profile.Folded = true; store.Profile.Locked = true; store.Save();
+        store.Profile.LayoutReference = DesktopLayout.Capture(store.Profile,
+            [new DesktopMonitor("saved", new(-1920, 0, 1920, 1080), new(-1920, 0, 1920, 1032), 144)]);
+        store.Save();
+        var detached = store.Detached();
+        store.Profile.LayoutReference = store.Profile.LayoutReference with { X = -1100 };
+        store.Publish(detached.Profile);
+        Check(store.Profile.LayoutReference.X == -1100, "background file results preserve the latest display reference");
+        catalog.Settings.ShowShortcutExtensions = true;
         catalog.Settings.SnapEnabled = false; catalog.Settings.SelectedId = work.Id; catalog.Save();
         var reopened = new DrawerCatalog(storage, desktop);
+        Check(reopened.Settings.ShowShortcutExtensions, "the shortcut extension display preference survives catalog reload");
         var layout = reopened.Stores[work.Id].Profile;
+        Check(layout.LayoutReference == store.Profile.LayoutReference, "display reference persists beside legacy layout fields");
         Check(reopened.Settings.Drawers.Single(d => d.Id == work.Id).Name == "设计与开发" &&
             layout.X == -1200 && layout.Width == 616 && layout.Height == 448 && layout.Folded && layout.Locked &&
             !reopened.Settings.SnapEnabled, "names, negative coordinates, sizes, folding, locks and snap preferences survive restart");
