@@ -199,22 +199,43 @@ internal sealed partial class StorageWindow
         ShowDrawerActionMenu(menu, runtime);
     }
 
-    internal bool ReorderDesktopContent(string drawerId, string path, int index)
+    internal bool ReorderDesktopContent(string drawerId, string path, int index) => ReorderDesktopContent(drawerId, [path], index);
+
+    internal bool ReorderDesktopContent(string drawerId, IReadOnlyList<string> paths, int index)
     {
         if (!runtimes.TryGetValue(drawerId, out var runtime)
             || runtime.Busy || closing || maintenanceBusy || exitAfterOperations || runtime.Definition.Removing) return false;
-        var contents = BuildContents(runtime.Row.Store).ToList();
-        var visible = contents.Where(item => item.ShowOnDesktop).ToList();
-        var source = visible.FindIndex(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
-        if (source < 0 || index < 0 || index >= visible.Count) return false;
-        if (source == index) return true;
-        var moved = visible[source];
-        visible.RemoveAt(source);
-        visible.Insert(index, moved);
+        var contents = BuildContents(runtime.Row.Store);
+        var visible = contents.Where(item => item.ShowOnDesktop).ToArray();
+        if (paths.Count == 0 || index < 0 || index >= visible.Length) return false;
+        var selected = paths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!selected.IsSubsetOf(visible.Select(item => item.Path))) return false;
+        var reordered = RepositionSelection(visible, item => selected.Contains(item.Path), index);
+        if (ReferenceEquals(reordered, visible) || visible.SequenceEqual(reordered)) return true;
         var next = 0;
-        SaveContentOrder(runtime, contents.Select(item => item.ShowOnDesktop ? visible[next++].Id : item.Id).ToList());
+        SaveContentOrder(runtime, contents.Select(item => item.ShowOnDesktop ? reordered[next++].Id : item.Id).ToList());
         Status("抽屉顺序已保存，已切换为手动排序。");
         return true;
+    }
+
+    internal static IReadOnlyList<T> RepositionSelection<T>(IReadOnlyList<T> items, Func<T, bool> selected, int index)
+    {
+        if (index < 0 || index >= items.Count || selected(items[index])) return items;
+        var block = new List<T>();
+        var rest = new List<T>();
+        var insertion = 0;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (selected(items[i])) block.Add(items[i]);
+            else
+            {
+                if (i == index) insertion = rest.Count + (block.Count > 0 ? 1 : 0);
+                rest.Add(items[i]);
+            }
+        }
+        if (block.Count == 0) return items;
+        rest.InsertRange(insertion, block);
+        return rest;
     }
 
     private void SaveContentOrder(DrawerRuntime runtime, List<string> order)

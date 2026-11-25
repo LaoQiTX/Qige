@@ -160,22 +160,13 @@ internal sealed partial class StorageWindow : Window
         DrawerRuntime? runtime = null;
         var panel = new ShortcutPanel(Status, (_, _) => { if (runtime != null) SaveLayout(runtime); },
             paths => definition.Kind == DrawerKind.Desktop && !demo && QueueAddPaths(definition.Id, paths, "ole", runtime?.Panel.DropOperationId),
-            paths => runtime != null && CanAcceptPanelInput(runtime, paths),
-            path =>
-            {
-                if (demo) { Status("样例内容仅在样例目录内使用。"); return; }
-                if (runtime?.ExternalItems.Any(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase)) == true)
-                {
-                    Status("请通过内容菜单操作映射项目或移除引用。");
-                    return;
-                }
-                if (runtime != null) _ = RunStoreAsync(runtime, "归还桌面并解除分组", copy => { copy.ReturnAndUngroup(path); return []; });
-            });
+            paths => runtime != null && CanAcceptPanelInput(runtime, paths));
         runtime = new DrawerRuntime(definition, row, panel);
         panel.InputDiagnostic = (stage, detail) => inputDiagnostics.Write(stage, new { Drawer = definition.Id, Detail = detail });
         panel.OpenItem = OpenContent;
-        panel.ReorderItem = (path, index) => ReorderDesktopContent(definition.Id, path, index);
-        panel.DropOnAnotherPanel = (path, point) => DropBetweenDrawers(runtime, path, point);
+        panel.ReorderItems = (paths, index) => ReorderDesktopContent(definition.Id, paths, index);
+        panel.DropOnAnotherPanel = (paths, point) => DropBetweenDrawers(runtime, paths, point);
+        panel.ReturnToDesktop = paths => DropSelectionOnDesktop(runtime, paths);
         if (definition.Kind == DrawerKind.FolderMapping)
         {
             panel.DropEffect = (paths, keys, allowed) => PickMappedDropEffect(runtime, paths, keys, allowed);
@@ -204,7 +195,11 @@ internal sealed partial class StorageWindow : Window
         panel.TransformLayout = (rect, edges) => Transform(runtime, rect, edges);
         panel.InteractionEnded += () => { runtime.Snap = new(); guides.Hide(); };
         panel.LayoutCommitted += () => { SaveLayout(runtime); UpdateDetail(); };
-        panel.ItemMenuRequested += path => OpenDrawerItemMenu(runtime, path);
+        panel.ItemMenuRequested += paths =>
+        {
+            if (paths.Count == 1) OpenDrawerItemMenu(runtime, paths[0]);
+            else OpenDrawerSelectionMenu(runtime, paths);
+        };
         panel.Disposed += () => { if (itemMenu != null) itemMenu.IsOpen = false; };
         store.Changed += () => RefreshItems(runtime);
         rows.Add(row); runtimes.Add(definition.Id, runtime);

@@ -158,36 +158,37 @@ internal sealed class DrawerCatalog
         try { Save(); } catch { entry.Path = previous; throw; }
     }
 
-    public void MoveReference(string sourceId, string targetId, string entryId)
+    public void MoveReferences(string sourceId, string targetId, IReadOnlyList<string> entryIds)
     {
         var source = Find(sourceId);
         var target = Find(targetId);
-        var index = source.References.FindIndex(entry => entry.Id == entryId);
-        if (source == target || source.Removing || target.Removing || target.Kind != DrawerKind.Desktop || index < 0)
-            throw new IOException("此引用无法移动。");
-        var reference = source.References[index];
-        DrawerContentSource.AssertUsable(reference.Path);
-        var exists = target.References.Any(entry => entry.Path.Equals(reference.Path, StringComparison.OrdinalIgnoreCase));
-        if (!exists) target.References.Add(reference);
-        source.References.RemoveAt(index);
+        if (source == target || source.Removing || target.Removing || target.Kind != DrawerKind.Desktop)
+            throw new IOException("这些引用无法移动。");
+        var ids = entryIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var previousSource = source.References.ToList();
+        var previousTarget = target.References.ToList();
+        var moved = previousSource.Where(reference => ids.Contains(reference.Id)).ToArray();
+        if (moved.Length != ids.Count) throw new IOException("选中的引用已变化，请重新选择。");
+        foreach (var reference in moved) DrawerContentSource.AssertUsable(reference.Path);
+        var existing = previousTarget.Select(reference => reference.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        target.References = previousTarget.Concat(moved.Where(reference => existing.Add(reference.Path))).ToList();
+        source.References = previousSource.Where(reference => !ids.Contains(reference.Id)).ToList();
         try { Save(); }
-        catch
-        {
-            if (!exists) target.References.Remove(reference);
-            source.References.Insert(index, reference);
-            throw;
-        }
+        catch { source.References = previousSource; target.References = previousTarget; throw; }
     }
 
-    public void RemoveReference(string id, string entryId)
+    public void RemoveReference(string id, string entryId) => RemoveReferences(id, [entryId]);
+
+    public void RemoveReferences(string id, IReadOnlyList<string> entryIds)
     {
-        var references = Find(id).References;
-        var index = references.FindIndex(r => r.Id == entryId);
-        if (index < 0) throw new IOException("引用已不存在。");
-        var reference = references[index];
-        references.RemoveAt(index);
-        try { Save(); } catch { references.Insert(index, reference); throw; }
+        var drawer = Find(id);
+        var ids = entryIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var previous = drawer.References;
+        drawer.References = previous.Where(reference => !ids.Contains(reference.Id)).ToList();
+        if (drawer.References.Count == previous.Count) { drawer.References = previous; return; }
+        try { Save(); } catch { drawer.References = previous; throw; }
     }
+
     public DrawerDefinition Create(string name, string? mappedPath = null)
     {
         ValidateName(name);

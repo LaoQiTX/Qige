@@ -11,7 +11,7 @@ namespace DesktopGroups;
 internal sealed class IconDragGhost : IDisposable
 {
     private nint handle;
-    public IconDragGhost(BitmapSource? icon, NativeDesktop.Point point)
+    public IconDragGhost(BitmapSource? icon, NativeDesktop.Point point, int count)
     {
         handle = CreateWindowEx(0x080800A8, "STATIC", "", 0x88000000, point.X + 10, point.Y + 10, 56, 56, 0, 0, 0, 0);
         if (handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -20,6 +20,15 @@ internal sealed class IconDragGhost : IDisposable
         {
             drawing.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(180, 40, 47, 58)), null, new Rect(0, 0, 56, 56), 9, 9);
             if (icon != null) drawing.DrawImage(icon, new Rect(8, 8, 40, 40));
+            if (count > 1)
+            {
+                var label = new FormattedText(count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"),
+                    11, Brushes.White, 1);
+                var badge = new Rect(54 - Math.Max(18, label.Width + 10), 36, Math.Max(18, label.Width + 10), 18);
+                drawing.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(30, 86, 168)), null, badge, 7, 7);
+                drawing.DrawText(label, new Point(badge.X + (badge.Width - label.Width) / 2, badge.Y + (badge.Height - label.Height) / 2));
+            }
         }
         var bitmap = new RenderTargetBitmap(56, 56, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual);
         var screen = GetDC(0); var memory = CreateCompatibleDC(screen);

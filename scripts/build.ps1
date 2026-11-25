@@ -1,6 +1,6 @@
 #requires -Version 7.0
 param(
-    [ValidateSet('Build','Test','Probe','SelfTest','ShellTest','RenderTest','VisibilityProbe','StorageTest','StorageRenderTest','IconTest','ResidentTest','Demo','Run','MigrateData','LayoutTest','DisplayTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')]
+    [ValidateSet('Build','Test','Probe','SelfTest','ShellTest','RenderTest','VisibilityProbe','StorageTest','StorageRenderTest','IconTest','ResidentTest','Demo','Run','MigrateData','LayoutTest','DisplayTest','DrawerSelectionTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')]
     [string]$Task = 'Build',
     [ValidateSet('Debug','Release')]
     [string]$Configuration = 'Debug'
@@ -15,17 +15,18 @@ Invoke-ProjectEnvironment {
     $tasks = if ($Task -eq 'Test') { @('SelfTest','StorageTest','LayoutTest','P0Test','BackupTest','BasicContentTest','InputTest') } else { @($Task) }
     foreach ($item in $tasks) {
         $kind = if ($item -in @('Run','Demo')) { 'App' }
-            elseif ($item -in @('SelfTest','StorageTest','StorageRenderTest','IconTest','ResidentTest','LayoutTest','DisplayTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')) { 'Tests' }
+            elseif ($item -in @('SelfTest','StorageTest','StorageRenderTest','IconTest','ResidentTest','LayoutTest','DisplayTest','DrawerSelectionTest','ManagerTest','P0Test','BackupTest','BasicContentTest','InputTest','InputExitTest')) { 'Tests' }
             else { 'Diagnostics' }
         $folder = switch ($kind) { App { 'src/DesktopGroups' } Tests { 'tests/DesktopGroups.Tests' } Diagnostics { 'tools/DesktopGroups.Diagnostics' } }
         $name = if ($kind -eq 'App') { 'Qige' } else { 'DesktopGroups.' + $kind }
         $data = switch ($kind) { App { '.local/QigeData' } Tests { '.build/test-results' } Diagnostics { '.build/diagnostics' } }
         if ($item -eq 'MigrateData') { $data = '.local/QigeData' }
+        if ($item -eq 'DrawerSelectionTest') { $data = '.local/drawer-selection-tests' }
         $arguments = @('--data-dir', (Join-Path $projectRoot $data))
         $flags = @{
             Probe='--inspect'; SelfTest='--self-test'; ShellTest='--shell-test'; RenderTest='--render-test'
             VisibilityProbe='--visibility-probe'; StorageTest='--storage-test'; StorageRenderTest='--storage-render-test'
-            LayoutTest='--layout-test'; DisplayTest='--display-test'; ManagerTest='--manager-test'; P0Test='--p0-test'; BackupTest='--backup-test'; BasicContentTest='--basic-content-test'; InputTest='--input-test'; InputExitTest='--input-exit-test'; IconTest='--icon-test'; ResidentTest='--resident-test'; Demo='--demo'; MigrateData='--migrate-data'
+            LayoutTest='--layout-test'; DisplayTest='--display-test'; DrawerSelectionTest='--drawer-selection-test'; ManagerTest='--manager-test'; P0Test='--p0-test'; BackupTest='--backup-test'; BasicContentTest='--basic-content-test'; InputTest='--input-test'; InputExitTest='--input-exit-test'; IconTest='--icon-test'; ResidentTest='--resident-test'; Demo='--demo'; MigrateData='--migrate-data'
         }
         if ($flags.ContainsKey($item)) { $arguments += $flags[$item] }
         if ($item -eq 'MigrateData') { $arguments += @('--migrate-from', $projectRoot) }
@@ -34,6 +35,11 @@ Invoke-ProjectEnvironment {
             $process = Start-Process -FilePath ([IO.Path]::ChangeExtension($assembly, '.exe')) -ArgumentList (($arguments | ForEach-Object { '"' + $_ + '"' }) -join ' ') -WindowStyle Hidden -PassThru
             $process.WaitForExit()
             if ($process.ExitCode -ne 0) { throw "Application failed: $($process.ExitCode)" }
+        }
+        elseif ($item -eq 'DrawerSelectionTest') {
+            # The test executable's Windows manifest enables native layered child windows.
+            & ([IO.Path]::ChangeExtension($assembly, '.exe')) @arguments
+            if ($LASTEXITCODE -ne 0) { throw "$item failed: $LASTEXITCODE" }
         }
         else {
             & dotnet $assembly @arguments

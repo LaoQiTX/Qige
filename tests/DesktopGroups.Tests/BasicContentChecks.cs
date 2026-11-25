@@ -74,8 +74,19 @@ internal static class BasicContentChecks
             File.ReadAllText(ordinary + ":Zone.Identifier").Contains("ZoneId=3"),
             "repeated backup recovery and return preserves file bytes and source stream");
         Check(UninstallSafety.Verify(data, desktop) == 0, "uninstall guard allows returned content and leaves mapping and references alone");
-        catalog.RemoveReference("default", referenceId);
-        Check(File.Exists(reference), "removing a reference preserves target");
+        var secondReference = Path.Combine(source, "第二个引用.txt");
+        File.WriteAllText(secondReference, "batch reference");
+        catalog.AddReferences("default", [secondReference]);
+        var secondReferenceId = catalog.Settings.Drawers[0].References.Single(item => item.Path == secondReference).Id;
+        var recipient = catalog.Create("批量引用");
+        Throws(() => catalog.MoveReferences("default", recipient.Id, [referenceId, "missing"]), "stale batch reference selection does not partially move");
+        catalog.MoveReferences("default", recipient.Id, [referenceId, secondReferenceId]);
+        var movedReferences = new DrawerCatalog(data, desktop).Settings.Drawers.Single(drawer => drawer.Id == recipient.Id).References;
+        Check(catalog.Settings.Drawers[0].References.Count == 0 && movedReferences.Select(item => item.Id).SequenceEqual([referenceId, secondReferenceId]),
+            "moving a selection of references keeps identities and persists all changes together");
+        catalog.RemoveReferences(recipient.Id, [referenceId, secondReferenceId]);
+        Check(recipient.References.Count == 0 && File.Exists(reference) && File.Exists(secondReference), "removing a selection of references preserves all originals");
+        File.Delete(secondReference);
         var unavailable = source + "-renamed";
         Directory.Move(source, unavailable);
         Throws(() => DrawerContentSource.ScanMapping(source), "mapping reports missing directory");
@@ -133,6 +144,31 @@ internal static class BasicContentChecks
         MappedFileOperations.Create(target, "new dir", true);
         Throws(() => MappedFileOperations.Rename(Path.Combine(target, "renamed"), "new.txt"), "rename conflict keeps both items");
         Check(File.Exists(Path.Combine(target, "renamed")) && Directory.Exists(Path.Combine(target, "new dir")), "rename and create operate on mapped content");
+
+        var batchSource = catalog.Stores[catalog.Create("拖动来源").Id];
+        var batchTarget = catalog.Stores[catalog.Create("拖动目标").Id];
+        var batchPaths = new[] { Path.Combine(desktop, "整组拖动 A.txt"), Path.Combine(desktop, "整组拖动 B.txt") };
+        foreach (var path in batchPaths) { File.WriteAllText(path, Path.GetFileName(path)); batchSource.Add(path); }
+        static ManagerContent[] Contents(ShortcutStore drawer) => drawer.Active.Select(entry => new ManagerContent(
+            entry.Id, Path.GetFileName(entry.OriginalPath), entry.OriginalPath, drawer.StoredPath(entry), "", "", null, true)).ToArray();
+        var dragged = StorageWindow.TransferSelectedFiles(data, batchSource, batchTarget, Contents(batchSource),
+            null, false, false, batchPaths, default);
+        Check(dragged.Completed == 2 && dragged.Issues.Count == 0 && batchSource.Profile.Entries.Count == 0 &&
+            batchTarget.Active.Select(entry => entry.OriginalPath).SequenceEqual(batchPaths), "group drag moves both managed memberships between drawers in order");
+        var copiedBatch = StorageWindow.TransferSelectedFiles(data, batchTarget, batchSource, Contents(batchTarget),
+            target, true, false, batchPaths, default);
+        Check(copiedBatch.Completed == 2 && batchTarget.Active.Count == 2 && batchPaths.All(path =>
+            File.ReadAllText(Path.Combine(target, Path.GetFileName(path))) == Path.GetFileName(path)),
+            "copying a managed selection to a mapped folder keeps both memberships and original bytes");
+        var existingTarget = Path.Combine(target, Path.GetFileName(batchPaths[0]));
+        File.WriteAllText(existingTarget, "unrelated conflict");
+        File.Delete(Path.Combine(target, Path.GetFileName(batchPaths[1])));
+        var mixedResult = StorageWindow.TransferSelectedFiles(data, batchTarget, batchSource, Contents(batchTarget),
+            target, false, true, batchPaths, default);
+        Check(mixedResult.Completed == 1 && mixedResult.Issues.Count == 1 && File.ReadAllText(existingTarget) == "unrelated conflict" &&
+            batchTarget.Active.Single().OriginalPath == batchPaths[0] && !File.Exists(batchPaths[1]) &&
+            File.ReadAllText(Path.Combine(target, Path.GetFileName(batchPaths[1]))) == Path.GetFileName(batchPaths[1]),
+            "batch move preserves both sides of a name conflict and still moves the other file");
         return 0;
     }
 

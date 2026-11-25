@@ -63,90 +63,6 @@ internal sealed partial class StorageWindow
         return (allowed & 2) != 0 && paths.All(path => MappedFileOperations.SameDrive(path, runtime.Definition.MappedPath!)) ? 2u : 1u;
     }
 
-    private bool DropBetweenDrawers(DrawerRuntime source, string path, NativeDesktop.Point point)
-    {
-        var target = runtimes.Values.FirstOrDefault(runtime => runtime != source && runtime.Panel.IsAtPoint(point));
-        if (target == null) return false;
-        Try(() =>
-        {
-            if (demo || closing || maintenanceBusy || exitAfterOperations || source.Busy || target.Busy || source.Definition.Removing || target.Definition.Removing)
-                throw new IOException("请等待抽屉文件操作结束后重试。");
-            var external = source.ExternalItems.FirstOrDefault(item => item.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
-            if (target.Definition.MappedPath is { } directory)
-            {
-                var hasControl = (GetAsyncKeyState(0x11) & 0x8000) != 0;
-                var hasShift = (GetAsyncKeyState(0x10) & 0x8000) != 0;
-                if (external == null)
-                {
-                    // The source is owned by the app. A managed-file move must detach membership before changing its original path.
-                    _ = MoveManagedBetweenDrawersAsync(source, target, path, hasControl, hasShift);
-                    return;
-                }
-                var move = !hasControl && (hasShift || external.Kind == DrawerContentKind.Mapped && MappedFileOperations.SameDrive(path, directory));
-                _ = TransferIntoMappingAsync(target, [path], _ => move);
-                return;
-            }
-            if (external == null) _ = MoveManagedBetweenDrawersAsync(source, target, path, false, false);
-            else
-            {
-                if (external.Kind == DrawerContentKind.Reference && (GetAsyncKeyState(0x11) & 0x8000) == 0)
-                    catalog.MoveReference(source.Definition.Id, target.Definition.Id, external.Id);
-                else catalog.AddReferences(target.Definition.Id, [path]);
-                InvalidateExternalContents(source);
-                InvalidateExternalContents(target);
-                Status("抽屉引用已更新，原件仍在原位置。");
-            }
-        });
-        return true;
-    }
-
-    private async Task MoveManagedBetweenDrawersAsync(DrawerRuntime source, DrawerRuntime target, string path, bool copy, bool forceMove)
-    {
-        var entry = source.Row.Store.Active.FirstOrDefault(item => source.Row.Store.StoredPath(item).Equals(path, StringComparison.OrdinalIgnoreCase));
-        if (entry == null) return;
-        if (target.Definition.MappedPath is { } directory && !forceMove && !MappedFileOperations.SameDrive(entry.OriginalPath, directory)) copy = true;
-        source.Busy = target.Busy = true;
-        RefreshHealthText();
-        try
-        {
-            var destination = target.Definition.MappedPath;
-            var result = await fileWorker.Run(() =>
-            {
-                var originalStore = source.Row.Store.Detached();
-                var targetStore = target.Row.Store.Detached();
-                string? issue = null;
-                try
-                {
-                    if (destination != null && copy) new MappedFileOperations(storage).Transfer(path, destination, false, default, allowManagedCopy: true);
-                    else
-                    {
-                        originalStore.ReturnAndUngroup(path);
-                        if (destination != null) new MappedFileOperations(storage).Transfer(entry.OriginalPath, destination, true, default);
-                        else targetStore.Add(entry.OriginalPath);
-                    }
-                }
-                catch (Exception error) { issue = error.Message; }
-                return (originalStore.Profile, Target: targetStore.Profile, issue);
-            });
-            if (disposed) return;
-            source.Row.Store.Publish(result.Profile);
-            if (target.Definition.Kind == DrawerKind.Desktop) target.Row.Store.Publish(result.Target);
-            Status(result.issue == null ? copy ? "已复制到映射目录。" : "跨抽屉移动完成。" : "跨抽屉操作中止，已保留可用副本。" + result.issue);
-        }
-        catch (Exception error) { Status(error.Message); }
-        finally
-        {
-            source.Busy = target.Busy = false;
-            if (!disposed)
-            {
-                RefreshHealthText();
-                InvalidateExternalContents(target);
-                if (exitAfterOperations && BusyOperations == 0 && !restoringExit) { exitAfterOperations = false; RequestExit(); }
-                _ = ScanRecoveryAsync();
-            }
-        }
-    }
-
     private async Task TransferIntoMappingAsync(DrawerRuntime runtime, IReadOnlyList<string> paths, Func<string, bool> chooseMove)
     {
         var operationId = runtime.Panel.DropOperationId ?? Guid.NewGuid().ToString("N");
@@ -176,10 +92,7 @@ internal sealed partial class StorageWindow
                     Status($"正在{(operation.Move ? "移动" : "复制")} {completed + issues.Count + 1}/{operations.Length} · {Path.GetFileName(operation.Path)}");
                     try
                     {
-                        var destination = Path.Combine(directory, Path.GetFileName(Path.TrimEndingDirectorySeparator(operation.Path)));
-                        if (desktopEntries.Contains(destination, StringComparer.OrdinalIgnoreCase) ||
-                            operation.Move && desktopEntries.Any(owned => MappedFileOperations.IsAtOrInside(owned, Path.GetFullPath(operation.Path))))
-                            throw new IOException("此项目包含已分组的桌面文件，请先解除原分组。");
+                        var destination = AssertDrawerTransferAllowed(operation.Path, directory, operation.Move, desktopEntries);
                         files.Transfer(operation.Path, directory, operation.Move, cancellation.Token, allowManagedCopy: copySources.Contains(operation.Path));
                         completed++;
                         inputDiagnostics.Write("mapping.file-completed", new { OperationId = operationId, operation.Path, operation.Move, destination });
@@ -199,6 +112,17 @@ internal sealed partial class StorageWindow
             });
         }
         finally { activeMappedTransfer = null; CancelTransferButton.Visibility = Visibility.Collapsed; }
+    }
+
+    private static string AssertDrawerTransferAllowed(string path, string directory, bool move, IReadOnlyList<string> desktopEntries,
+        string? detachingOriginal = null)
+    {
+        var source = Path.GetFullPath(path);
+        var destination = Path.Combine(directory, Path.GetFileName(Path.TrimEndingDirectorySeparator(source)));
+        if (desktopEntries.Any(owned => string.Equals(owned, destination, StringComparison.OrdinalIgnoreCase) ||
+            move && !string.Equals(owned, detachingOriginal, StringComparison.OrdinalIgnoreCase) && MappedFileOperations.IsAtOrInside(owned, source)))
+            throw new IOException("此项目包含已分组的桌面文件，请先解除原分组。");
+        return destination;
     }
 
     private async Task RunMappedOperationAsync(DrawerRuntime runtime, string label, Func<string> operation)

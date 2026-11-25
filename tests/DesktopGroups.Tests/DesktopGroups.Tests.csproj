@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <UseWPF>true</UseWPF>
+    <ApplicationManifest>../../src/DesktopGroups/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/DesktopGroups/DesktopGroups.csproj" />

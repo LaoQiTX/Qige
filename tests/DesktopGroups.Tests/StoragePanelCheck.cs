@@ -129,7 +129,7 @@ internal static class StoragePanelCheck
             if (effect != 0 || panel.IsExpanded || !File.Exists(rejectedFile)) throw new InvalidOperationException("桌面外的文件没有被正确拒绝。");
             panel.DropTarget.DragLeave();
             if (errors.Count > 0) throw new InvalidOperationException(string.Join("；", errors));
-            using (var ghost = new IconDragGhost(ShortcutInfo.LoadIcon(store.StoredPath(store.Active[0])), new NativeDesktop.Point { X = 800, Y = 240 }))
+            using (var ghost = new IconDragGhost(ShortcutInfo.LoadIcon(store.StoredPath(store.Active[0])), new NativeDesktop.Point { X = 800, Y = 240 }, 1))
                 ghost.Move(new NativeDesktop.Point { X = 820, Y = 260 });
             timings.Sort();
             // The production receiver queues its own move. The Shell must never delete

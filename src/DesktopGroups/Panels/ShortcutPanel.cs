@@ -14,7 +14,7 @@ namespace DesktopGroups;
 // WPF renders offscreen only; no WPF composition target is attached to Explorer.
 internal enum IconDensity { Compact, Standard, Spacious }
 
-internal sealed class ShortcutPanel : IDisposable
+internal sealed partial class ShortcutPanel : IDisposable
 {
     private const string ClassName = "DesktopGroups.ShortcutPanel.v1";
     private static readonly WindowProcedure Procedure = Dispatch;
@@ -24,7 +24,6 @@ internal sealed class ShortcutPanel : IDisposable
     private readonly Action<int, int> moved;
     private readonly Func<IReadOnlyList<string>, bool> dropped;
     private readonly Func<IReadOnlyList<string>, bool> canAccept;
-    private readonly Action<string>? returnToDesktop;
     private readonly Func<nint> findHost;
     private readonly Func<IReadOnlyList<DesktopMonitor>> captureMonitors;
     private readonly DispatcherTimer animationTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(8) };
@@ -43,7 +42,7 @@ internal sealed class ShortcutPanel : IDisposable
     private bool disposed;
     private bool dragging, tracking, folded, hoveringOpen;
     private NativeDesktop.Point dragStart;
-    private int startX, startY, selected = -1, hovered = -1, headerHovered;
+    private int startX, startY, hovered = -1, headerHovered;
     private string title = "常用";
     private double logicalWidth = 420, logicalHeight = 352, scrollOffset;
     private bool layoutLocked, scrolling, highlighted;
@@ -68,7 +67,7 @@ internal sealed class ShortcutPanel : IDisposable
     public Func<LayoutRect, int, LayoutRect>? TransformLayout { get; set; }
     public event Action? LayoutCommitted;
     public event Action? InteractionEnded;
-    public event Action<string>? ItemMenuRequested;
+    public event Action<IReadOnlyList<string>>? ItemMenuRequested;
     internal bool InteractionBlocked { get; set; }
     internal Action<string, object>? InputDiagnostic { get; set; }
     internal string? DropOperationId => dropTarget?.OperationId;
@@ -105,36 +104,36 @@ internal sealed class ShortcutPanel : IDisposable
     internal bool IsFolded => folded;
     internal bool IsExpanded => !folded || hoveringOpen;
     internal int HoveredIndex => hovered;
-    internal int SelectedIndex => selected;
+    internal int SelectedIndex => items.FindIndex(item => selectedPaths.Contains(item.Path));
     internal int ItemCount => items.Count;
     internal bool IsAnimating => animationTimer.IsEnabled;
     internal int AnimationFrames { get; private set; }
     internal bool IsAttached => Handle != 0 && IsWindow(Handle) && IsWindow(host) && NativeDesktop.GetParent(Handle) == host;
-    internal bool IsInteracting => dragging || resizeEdges != 0 || scrolling || pressedItem >= 0 || fileDrag || itemMenuOpen;
+    internal bool IsInteracting => dragging || resizeEdges != 0 || scrolling || pressedItem >= 0 || boxStart.HasValue || fileDrag || itemMenuOpen;
     internal int AttachmentCount { get; private set; }
     public event Action<bool>? FoldedChanged;
     internal IPanelDropTarget DropTarget => dropTarget ?? throw new InvalidOperationException("拖放尚未注册。");
     public event Action? Disposed;
     internal Action<string>? OpenItem { get; set; }
-    internal Func<string, int, bool>? ReorderItem { get; set; }
-    internal Func<string, NativeDesktop.Point, bool>? DropOnAnotherPanel { get; set; }
+    internal Func<IReadOnlyList<string>, int, bool>? ReorderItems { get; set; }
+    internal Func<IReadOnlyList<string>, NativeDesktop.Point, bool>? DropOnAnotherPanel { get; set; }
+    internal Action<IReadOnlyList<string>>? ReturnToDesktop { get; set; }
     internal Func<IReadOnlyList<string>, uint, uint, uint>? DropEffect { get; set; }
     internal Func<IReadOnlyList<string>, uint, bool>? MappedDrop { get; set; }
     internal bool IsAtPoint(NativeDesktop.Point point) => IsAttached && WindowFromPoint(point) == Handle;
 
     public ShortcutPanel(Action<string> report, Action<int, int> moved, Func<IReadOnlyList<string>, bool> dropped,
-        Func<IReadOnlyList<string>, bool>? canAccept = null, Action<string>? returnToDesktop = null, Func<nint>? findHost = null,
+        Func<IReadOnlyList<string>, bool>? canAccept = null, Func<nint>? findHost = null,
         Func<IReadOnlyList<DesktopMonitor>>? captureMonitors = null)
     {
         this.report = report; this.moved = moved; this.dropped = dropped;
         this.canAccept = canAccept ?? (paths => paths.Count > 0 && paths.All(path => File.Exists(path) && ShortcutInfo.IsShortcut(path)));
-        this.returnToDesktop = returnToDesktop;
         this.findHost = findHost ?? DesktopAttachment.FindIconHost;
         this.captureMonitors = captureMonitors ?? DesktopPlacement.Capture;
         animationTimer.Tick += (_, _) => AdvanceAnimation();
         gestureTimer.Tick += (_, _) =>
         {
-            if ((GetAsyncKeyState(0x1B) & 0x8000) != 0) { CancelIconGesture(); UpdateHoverAfterMove(); }
+            if ((GetAsyncKeyState(0x1B) & 0x8000) != 0) CancelContentGesture();
         };
     }
 
@@ -309,17 +308,12 @@ internal sealed class ShortcutPanel : IDisposable
 
     public void SetItems(IEnumerable<(string Name, string Path, string? OriginalPath)> entries)
     {
-        items = entries.Select(entry => new PanelItem(entry.Name, entry.Path, ShortcutInfo.LoadIcon(entry.Path, entry.OriginalPath))).ToList();
-        selected = -1; hovered = -1;
-        scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
-        if (IsAttached) Render();
+        ReplaceItems(entries.Select(entry => new PanelItem(entry.Name, entry.Path, ShortcutInfo.LoadIcon(entry.Path, entry.OriginalPath))).ToList());
     }
 
     internal void SetPreparedItems(IEnumerable<(string Name, string Path, BitmapSource? Icon)> entries)
     {
-        items = entries.Select(e => new PanelItem(e.Name, e.Path, e.Icon)).ToList();
-        selected = -1; hovered = -1; scrollOffset = Math.Clamp(scrollOffset, 0, MaxScroll);
-        if (IsAttached) Render();
+        ReplaceItems(entries.Select(e => new PanelItem(e.Name, e.Path, e.Icon)).ToList());
     }
 
     internal void MoveTo(int x, int y)
@@ -380,16 +374,22 @@ internal sealed class ShortcutPanel : IDisposable
             }
             for (var index = 0; index < items.Count; index++)
             {
-                var left = 14 + index % Columns * CellWidth;
-                var top = BodyTop + index / Columns * RowHeight - scrollOffset;
-                if (top + RowHeight - 6 < (expandsUpward ? 8 : 49) || top > height - (expandsUpward ? 49 : 8)) continue;
-                var cell = new Rect(left, top, CellWidth - 4, RowHeight - 6);
-                if (index == selected) drawing.DrawRoundedRectangle(DrawerAppearance.Current.Selected, new Pen(DrawerAppearance.Current.SelectedEdge, 1), cell, 9, 9);
+                var cell = ItemCell(index);
+                var left = cell.X;
+                var top = cell.Y;
+                if (cell.Bottom < (expandsUpward ? 8 : 49) || top > height - (expandsUpward ? 49 : 8)) continue;
+                if (selectedPaths.Contains(items[index].Path)) drawing.DrawRoundedRectangle(DrawerAppearance.Current.Selected, new Pen(DrawerAppearance.Current.SelectedEdge, 1), cell, 9, 9);
                 else if (index == hovered) drawing.DrawRoundedRectangle(DrawerAppearance.Current.Hover, new Pen(DrawerAppearance.Current.HoverEdge, 1), cell, 9, 9);
                 var center = left + (CellWidth - 4) / 2;
                 if (items[index].Icon is { } icon) drawing.DrawImage(icon, new Rect(center - 20, top + 7, 40, 40));
                 else drawing.DrawRoundedRectangle(DrawerAppearance.Current.Placeholder, null, new Rect(center - 16, top + 11, 32, 32), 7, 7);
                 Text(drawing, items[index].Name, left + 4, top + 53, 11, DrawerAppearance.Current.Text.Color, CellWidth - 12, 31, alignment: TextAlignment.Center);
+            }
+            if (!box.IsEmpty)
+            {
+                var accent = DrawerAppearance.Current.Accent.Color;
+                var tint = new SolidColorBrush(Color.FromArgb(32, accent.R, accent.G, accent.B));
+                drawing.DrawRectangle(tint, new Pen(DrawerAppearance.Current.SelectedEdge, 1), box);
             }
             drawing.Pop();
             if (MaxScroll > 0)
@@ -528,13 +528,14 @@ internal sealed class ShortcutPanel : IDisposable
 
     private int HitItem(int x, int y)
     {
-        if (!IsExpanded) return -1;
+        if (!IsExpanded || y < 0 || y >= Height) return -1;
         var fullY = y / scale + (expandsUpward ? logicalHeight - displayHeight : 0);
         if (fullY < BodyTop || fullY > logicalHeight - (expandsUpward ? 49 : 8) || x < 14 * scale || x >= (logicalWidth - 14) * scale) return -1;
         var column = (int)((x / scale - 14) / CellWidth);
         var row = (int)((fullY - BodyTop + scrollOffset) / RowHeight);
         var index = row * Columns + column;
-        return column >= 0 && column < Columns && row >= 0 && index >= 0 && index < items.Count ? index : -1;
+        return column >= 0 && column < Columns && row >= 0 && index >= 0 && index < items.Count
+            && ItemCell(index).Contains(new Point(x / scale, fullY)) ? index : -1;
     }
 
     private bool HitTitle(int y) => expandsUpward ? y >= Height - 46 * scale : y < 46 * scale;
@@ -581,7 +582,13 @@ internal sealed class ShortcutPanel : IDisposable
         if (needsRender) Render();
     }
 
-    internal void SelectAt(int x, int y) { selected = HitItem(x, y); Render(); }
+    internal void SelectAt(int x, int y)
+    {
+        selectedPaths.Clear();
+        var index = HitItem(x, y);
+        if (index >= 0) selectedPaths.Add(items[index].Path);
+        Render();
+    }
 
     internal void CloseItemMenu()
     {
@@ -621,7 +628,11 @@ internal sealed class ShortcutPanel : IDisposable
 
     private nint OnMessage(uint message, nint wParam, nint lParam)
     {
-        if (InteractionBlocked && message is >= 0x200 and <= 0x20E) return 0;
+        if (InteractionBlocked && message is >= 0x200 and <= 0x20E)
+        {
+            if (pressedItem >= 0 || boxStart.HasValue) CancelContentGesture();
+            return 0;
+        }
         var x = (short)(lParam.ToInt64() & 0xffff);
         var y = (short)((lParam.ToInt64() >> 16) & 0xffff);
         switch (message)
@@ -633,6 +644,7 @@ internal sealed class ShortcutPanel : IDisposable
             case 0x21: return 3;
             case 0x14: return 1;
             case 0x201:
+                if (IsInteracting) return 0;
                 var edges = HitResize(x, y);
                 if (edges != 0)
                 {
@@ -651,16 +663,7 @@ internal sealed class ShortcutPanel : IDisposable
                     DesktopAttachment.GetCursorPos(out dragStart);
                     startX = X; startY = Y; gestureStart = ScreenBounds; dragging = true; SetCapture(Handle);
                 }
-                else
-                {
-                    SelectAt(x, y);
-                    if (selected >= 0 && (returnToDesktop != null || ReorderItem != null))
-                    {
-                        pressedItem = selected; iconDragging = false;
-                        DesktopAttachment.GetCursorPos(out iconStart);
-                        SetCapture(Handle); gestureTimer.Start();
-                    }
-                }
+                else BeginContentGesture(x, y, (wParam.ToInt64() & 8) != 0);
                 return 0;
             case 0x200:
                 if (scrolling) { ScrollAt(y); return 0; }
@@ -674,25 +677,8 @@ internal sealed class ShortcutPanel : IDisposable
                     DesktopAttachment.ScreenToClient(host, ref point);
                     MoveTo(point.X, point.Y + (expandsUpward ? Height - (int)Math.Round(46 * scale) : 0));
                 }
-                else if (pressedItem >= 0)
-                {
-                    DesktopAttachment.GetCursorPos(out var cursor);
-                    if (!iconDragging && (Math.Abs(cursor.X - iconStart.X) >= GetSystemMetrics(68) || Math.Abs(cursor.Y - iconStart.Y) >= GetSystemMetrics(69)))
-                    {
-                        iconDragging = true;
-                        iconGhost = new IconDragGhost(items[pressedItem].Icon, cursor);
-                    }
-                    iconGhost?.Move(cursor);
-                    if (iconDragging)
-                    {
-                        var local = cursor;
-                        DesktopAttachment.ScreenToClient(Handle, ref local);
-                        var target = ReorderIndex(local.X, local.Y);
-                        if (hovered != target) { hovered = target; Render(); }
-                        var accepted = target >= 0 || IsDesktopAt(cursor) || Instances.Values.Any(panel => panel != this && panel.IsAtPoint(cursor));
-                        SetCursor(LoadCursor(0, (nint)(accepted ? 32512 : 32648)));
-                    }
-                }
+                else if (pressedItem >= 0) MoveIconGesture(x, y);
+                else if (boxStart.HasValue) UpdateBox(x, y);
                 else
                 {
                     var hit = HitResize(x, y);
@@ -702,21 +688,30 @@ internal sealed class ShortcutPanel : IDisposable
                 }
                 return 0;
             case 0x202:
-                if (pressedItem >= 0) { CompleteIconGesture(); return 0; }
+                if (pressedItem >= 0) { CompleteIconGesture(x, y); return 0; }
+                if (boxStart.HasValue) { FinishBox(x, y); return 0; }
                 if (resizeEdges != 0) { ResizePointer(force: true); resizeEdges = 0; ReleaseCapture(); CommitLayout(); return 0; }
                 if (scrolling) { scrolling = false; ReleaseCapture(); UpdateHoverAfterMove(); return 0; }
                 if (dragging) { dragging = false; ReleaseCapture(); CommitLayout(); }
                 return 0;
             case 0x20A:
                 ScrollBy(-(short)((wParam.ToInt64() >> 16) & 0xffff) / 120d * RowHeight);
+                if (boxStart.HasValue)
+                {
+                    var pointer = new NativeDesktop.Point { X = x, Y = y };
+                    DesktopAttachment.ScreenToClient(Handle, ref pointer);
+                    UpdateBox(pointer.X, pointer.Y);
+                }
                 return 0;
             case 0x205:
                 var contextItem = HitItem(x, y);
                 if (contextItem >= 0 && ItemMenuRequested != null)
                 {
                     if (IsInteracting) return 0;
-                    selected = contextItem; itemMenuOpen = true; Render();
-                    try { ItemMenuRequested.Invoke(items[contextItem].Path); }
+                    var path = items[contextItem].Path;
+                    if (!selectedPaths.Contains(path)) { selectedPaths.Clear(); selectedPaths.Add(path); }
+                    itemMenuOpen = true; Render();
+                    try { ItemMenuRequested.Invoke(SelectionPaths()); }
                     catch { CloseItemMenu(); throw; }
                     return 0;
                 }
@@ -727,8 +722,10 @@ internal sealed class ShortcutPanel : IDisposable
                     try { BlankMenuRequested.Invoke(); } catch { CloseItemMenu(); throw; }
                 }
                 return 0;
-            case 0x215:
-                if (pressedItem >= 0) { CancelIconGesture(); UpdateHoverAfterMove(); }
+            case 0x1F when pressedItem >= 0 || boxStart.HasValue: // WM_CANCELMODE
+                CancelContentGesture(); return 0;
+            case 0x215: // WM_CAPTURECHANGED
+                if (pressedItem >= 0 || boxStart.HasValue) { CancelContentGesture(); return 0; }
                 var wasScrolling = scrolling;
                 scrolling = false;
                 if (dragging || resizeEdges != 0) { dragging = false; resizeEdges = 0; CommitLayout(); }
@@ -810,49 +807,6 @@ internal sealed class ShortcutPanel : IDisposable
         return window == host || (NativeDesktop.GetParent(window) == host && NativeDesktop.ClassName(window) == "SysListView32");
     }
 
-    private void CompleteIconGesture()
-    {
-        var path = pressedItem >= 0 && pressedItem < items.Count ? items[pressedItem].Path : null;
-        var didDrag = iconDragging;
-        DesktopAttachment.GetCursorPos(out var point);
-        CancelIconGesture(); // Remove the ghost before checking the target window.
-        if (didDrag && path != null)
-        {
-            var local = point;
-            DesktopAttachment.ScreenToClient(Handle, ref local);
-            if (IsAtPoint(point)) TryReorderAt(path, local.X, local.Y);
-            else if (DropOnAnotherPanel?.Invoke(path, point) == true) { }
-            else if (IsDesktopAt(point)) returnToDesktop?.Invoke(path);
-            else report("已取消拖出：请拖到桌面空白处松开。");
-        }
-        UpdateHoverAfterMove();
-    }
-
-    private int ReorderIndex(int x, int y)
-    {
-        if (!IsExpanded || items.Count == 0 || ReorderItem == null || HitTitle(y)
-            || x < 14 * scale || x >= (logicalWidth - 14) * scale) return -1;
-        var fullY = y / scale + (expandsUpward ? logicalHeight - displayHeight : 0);
-        if (fullY < BodyTop || fullY > logicalHeight - (expandsUpward ? 49 : 8)) return -1;
-        var column = (int)((x / scale - 14) / CellWidth);
-        var row = (int)((fullY - BodyTop + scrollOffset) / RowHeight);
-        return Math.Min(items.Count - 1, row * Columns + column);
-    }
-
-    internal bool TryReorderAt(string path, int x, int y)
-    {
-        var index = ReorderIndex(x, y);
-        return !InteractionBlocked && index >= 0 && ReorderItem?.Invoke(path, index) == true;
-    }
-
-    private void CancelIconGesture()
-    {
-        pressedItem = -1; iconDragging = false; gestureTimer.Stop();
-        iconGhost?.Dispose(); iconGhost = null;
-        ReleaseCapture();
-        SetCursor(LoadCursor(0, (nint)32512));
-    }
-
     private void UpdateHoverAfterMove()
     {
         if (!IsAttached) return;
@@ -896,7 +850,7 @@ internal sealed class ShortcutPanel : IDisposable
     private void ReleaseSurface(bool destroy = true)
     {
         animationTimer.Stop(); gestureTimer.Stop();
-        if (pressedItem >= 0) CancelIconGesture();
+        if (pressedItem >= 0 || boxStart.HasValue) CancelContentGesture(updateHover: false);
         if (dragging || resizeEdges != 0 || scrolling) { dragging = false; resizeEdges = 0; scrolling = false; ReleaseCapture(); InteractionEnded?.Invoke(); }
         if (dropRegistered)
         {
@@ -928,6 +882,7 @@ internal sealed class ShortcutPanel : IDisposable
     [DllImport("user32.dll")] private static extern nint LoadCursor(nint instance, nint name);
     [DllImport("user32.dll")] private static extern nint SetCapture(nint window);
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern nint GetCapture();
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int metric);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern nint SetCursor(nint cursor);
